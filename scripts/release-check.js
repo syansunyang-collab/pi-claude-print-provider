@@ -6,9 +6,9 @@ import { fileURLToPath } from "node:url";
 const root = fileURLToPath(new URL("..", import.meta.url));
 const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 const expected = {
-  name: "pi-claude-code-provider",
-  author: "chem <sineverbisnon@gmail.com>",
-  repository: "git+https://github.com/syansunyang-collab/pi-claude-code-provider.git",
+  name: "pi-claude-print-provider",
+  author: "Kai Mercer <syansunyang@gmail.com>",
+  repository: "git+https://github.com/syansunyang-collab/pi-claude-print-provider.git",
 };
 
 if (manifest.name !== expected.name) throw new Error(`Unexpected npm name: ${manifest.name}`);

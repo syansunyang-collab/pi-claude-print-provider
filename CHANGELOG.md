@@ -1,6 +1,34 @@
 # Changelog
 
-## [Unreleased]
+## [1.0.0] - 2026-10-11
+
+First independent release, continued from [chem/pi-claude-code-provider](https://github.com/chem/pi-claude-code-provider) 0.6.0, which chem archived on 2026-09-27. Thanks to chem for the original work; their MIT copyright notice is kept in LICENSE.
+
+This release contains everything from 0.6.0-fork.1. Verified baseline: Pi 0.99.1 and Claude Code 2.1.292. Minimum supported: Pi 0.86.1 and Claude Code 2.1.281.
+
+### Changed
+
+- The npm package is now `pi-claude-print-provider` (previously `pi-claude-code-provider`). Remove the old package before installing: `pi remove npm:pi-claude-code-provider`.
+- Images are sent inline as base64 blocks on stdin, directly after the transcript record that references them, instead of as `@`-referenced files. Claude Code 2.1.292 silently drops `@` files larger than 256 KiB.
+- The model picker lists full model IDs (`claude-sonnet-5-5`, `claude-fable-5-1`, `claude-opus-5-5`, `claude-haiku-4-5`) instead of aliases. Sessions saved with an alias ID need a model reselected.
+
+### Fixed
+
+- Under Claude Code 2.1.292 every request failed the isolation check because the built-in `plugin-authoring` plugin loads in print mode. It is now disabled alongside `agents-md` and `telemetry`.
+- Summary requests marked `cacheRetention: "none"` (compaction, branch summaries) no longer write the prompt to the prompt cache.
+- Maintenance scripts and paid stages select full model IDs.
+- The doctor's context-window lookup type-checks against Pi's `ProviderModelConfig` union.
+
+### Removed
+
+- The session image store and per-request image leases. On Windows, image directories left by earlier versions must be removed by hand after all earlier Pi processes have exited.
+- One POSIX-only quoted temp-root test.
+
+### Verification
+
+- Linux (local run, Node 22.23.1 and 24.16.0): `npm run release:check` passed; 382 tests, 376 pass, 0 fail, 6 Windows-only skipped.
+- Windows 11 x64, Node 24.12.0: 382 tests, 349 pass, 33 POSIX-only skipped, 0 fail; all 15 paid stages passed on 2026-10-09 against commit `696d473` (Max subscription).
+- Paid stages have not been run on Linux or macOS.
 
 ## [0.6.0-fork.1] - 2026-10-09
 

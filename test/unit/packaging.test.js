@@ -46,7 +46,9 @@ for (const route of ["local", "npm", "git"]) {
       const loaded = await loadExtensions(resolved.extensions.map((entry) => entry.path), directory);
       assert.deepEqual(loaded.errors, []);
       assert.equal(loaded.extensions.length, 1);
-      assert.equal(loaded.runtime.pendingProviderRegistrations[0].name, manifest.name);
+      // The npm name changed to pi-claude-print-provider in 1.0.0; the provider ID
+      // stays pi-claude-code-provider so existing sessions and settings keep working.
+      assert.equal(loaded.runtime.pendingProviderRegistrations[0].name, "pi-claude-code-provider");
       for (const handler of loaded.extensions[0].handlers.get("session_shutdown")) await handler({}, {});
       loaded.runtime.invalidate();
     } finally {

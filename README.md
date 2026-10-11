@@ -1,204 +1,387 @@
-# pi-claude-code-provider（Windows 维护分支）
+# pi-claude-print-provider
 
-本仓库是 [chem/pi-claude-code-provider](https://github.com/chem/pi-claude-code-provider) 的分支。上游在 2026-09-27 发布 v0.6.0 后归档，不再维护。本分支在 v0.6.0 基础上适配新版 Claude Code 与 Windows，验证版本见 [兼容基线](DEVELOPING.md#compatibility-baseline)，保留原 MIT 许可证与作者署名。分割线以下为上游英文文档，安装地址与模型名已按本分支更新。
+**在 Pi 里调度你自己的 Claude 订阅：走官方 Claude Code，不碰 token，工具全由 Pi 执行。**
 
-## 使用边界
+[中文](#中文) · [English](#english)
 
-- 插件只在本机启动已安装的官方 `claude` 可执行文件，使用其公开文档中的非交互模式（`claude -p` / `--print`）；登录与认证全部由 Claude Code 自身完成。
-- 插件不读取、复制或转发 Claude 凭据与 OAuth token，不模拟官方客户端流量，不使用 Anthropic API key，也不使用 Agent SDK。
-- 每位使用者使用自己的 Claude 订阅账号，用量计入该账号的套餐额度。不支持共享账号。
-- Anthropic 帮助中心 [Use the Claude Agent SDK with your Claude plan](https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan)（2026-10-09 查阅）原文：
+<a id="中文"></a>
 
-  > **Update October 7, 2026:** … You can still use the Claude Agent SDK, `claude -p`, and third-party apps with your subscription limits.
-  >
-  > **Update June 15, 2026:** We've paused the previously-announced changes to Claude Agent SDK usage. For now, nothing has changed: Claude Agent SDK, `claude -p`, and third-party app usage still draw from your subscription limits.
+## 为什么有这个项目
 
-  [Monthly API credits for Max and Team plans](https://support.claude.com/en/articles/17154008) 说明：以订阅登录时，`claude -p` 的用量计入套餐额度，不使用 API 额度。
-- 上述说明带有 “For now” 表述，政策可能调整。使用前以 Anthropic 当前的条款与帮助中心说明为准。
+我在 [Pi](https://github.com/earendil-works/pi) 里同时调度 Claude、GPT 和其他几家 AI 的订阅，需要一个能接入 Claude 订阅的 provider。
 
-## 与上游 v0.6.0 的差异
+Anthropic 对第三方工具使用订阅账号管得很严。社区里有些做法会从本机读取 Claude 的 OAuth token，或者把请求伪装成官方 Claude Code 发出去。这些做法违反 Anthropic 的条款，也已经有人因此被封号。
 
-| 改动 | 上游 v0.6.0 | 本分支 |
+所以我选了合规的路：让本机官方的 `claude` 程序自己登录、自己发请求，插件不碰任何凭据。这个插件延续自 chem 的 [pi-claude-code-provider](https://github.com/chem/pi-claude-code-provider)，它从一开始就是这么设计的。
+
+## 它为什么合规
+
+Anthropic 的 [Legal and compliance](https://code.claude.com/docs/en/legal-and-compliance) 页面写明，不允许第三方开发者收集、存储或转手 Claude.ai 的凭据和会话 token，但这些限制：
+
+> "Nor does it prevent an end user from signing in to the unmodified Claude Code binary with their own Claude subscription"
+>
+> （也不妨碍终端用户用自己的 Claude 订阅登录未经修改的 Claude Code 程序。）
+
+本插件就落在这条线以内：
+
+- **不经手凭据。** 插件不读取、复制或转发 OAuth token 或 API key。登录由官方 Claude Code 完成（`claude auth login`），插件启动前只运行 `claude auth status` 检查登录状态。
+- **不改官方程序。** 插件调用的是你本机已安装、未经修改的 `claude`，用的是它公开文档里的非交互模式（`claude -p`）。
+- **不冒充客户端。** 插件不自己构造发往 Anthropic 的请求，也不伪造请求头或客户端身份。所有网络请求都由官方 `claude` 自己发出。
+- **主动拦截凭据变量。** Claude 子进程只拿到白名单里的环境变量。如果有人试图传入 `ANTHROPIC_API_KEY`、`ANTHROPIC_AUTH_TOKEN`、`ANTHROPIC_BASE_URL`、`CLAUDE_CODE_OAUTH_TOKEN` 或 Bedrock/Vertex 开关，插件直接拒绝启动。
+
+是否符合你所用套餐的条款，最终由你自己负责，详见文末的合规说明。
+
+## 它怎么工作
+
+1. Pi 每发一次请求，插件就启动一个新的 `claude -p` 进程，把 Pi 当前的完整对话通过 stdin 发过去。
+2. Claude 想调用工具时，会发给插件提供的一个 MCP 桥。这个桥只把调用作为"提议"交还给插件，对每个 `tools/call` 一律拒绝执行。
+3. Pi 在自己的界面里执行这个工具，正常经过 Pi 的 hook 和权限检查，再把结果带进下一轮请求。
+
+会话、分支和压缩都由 Pi 管理，Claude Code 这边不保存会话。插件没有运行时依赖。
+
+## 缓存与计费
+
+### 为什么要关心缓存
+
+插件每轮都要把完整对话重发一遍，命中提示缓存（prompt cache）与否，花费差别很大。按 Anthropic 公开的 [API 价格](https://platform.claude.com/docs/en/build-with-claude/prompt-caching)：
+- 缓存读取通常是基础输入价的 0.1 倍（Sonnet 5.5 和 Opus 5.5 是 0.05 倍）；
+- 5 分钟缓存写入是 1.25 倍，1 小时缓存写入是 2 倍。
+
+用订阅时，用量计入套餐额度。Anthropic 没有公开额度和 token 的换算方式，但没命中缓存时，同样的对话会消耗更多额度。开启了额外用量时，超出套餐的部分会另外计费。插件给 Pi 上报的金额恒为 0，因为它无法知道订阅怎么计费。
+
+### 缓存在什么情况下会丢
+
+- **间隔太久。** API 默认缓存 5 分钟。插件给历史打的缓存断点是 1 小时，所以一小时内断断续续地用仍能命中，超过一小时就会整段重新写入。
+- **Claude Code 在末尾追加的内容在变。** Claude Code 默认会在末尾附一段不断变化的 `<total_tokens>` 提示，会让缓存全部失效。插件通过设置 `totalTokensReminder: "off"` 关掉它。
+- **升级 Claude Code。** Claude Code 会在最前面放一段带版本号、不进缓存的计费头，所以每次升级后的第一轮都会冷启动。
+- **一步里并行工具调用太多。** 每个缓存断点最多往回找约 20 个块，一步里有大约 19 个以上并行工具调用时，缓存复用会悄悄失效。
+- **前缀内容在变。** 例如 Haiku 4.5 收到的环境信息排在对话之前，只要它变了就命中不了；Haiku 4.5 不足 4096 token 时也不缓存。
+
+### chem 的设计
+
+缓存相关的核心设计来自 chem：
+- 历史只追加、不改写，工具列表顺序固定；
+- 关掉 `<total_tokens>` 提示；
+- 插件自己在最后一条历史上打 1 小时缓存断点。因为 API 要求长 TTL 在前，而 Claude Code 自己的断点就是 1 小时的，所以只能用 1 小时，代价是写入价比 5 分钟的高；
+- 不花额度检查请求结构的 `npm run capture:claude-breakpoints`；
+- 四个付费缓存测试：第 2、3 轮命中率必须 ≥ 80%，写入量必须少于第 1 轮的四分之一。
+
+### 我们的改动
+
+- **图片改为内联。** 上游把图片写成文件再用 `@"路径"` 引用，Claude Code 会把读取附件的说明放在对话前面，每加一张图都会改写缓存前缀；在当前验证的 Claude Code 版本上，超过 256 KiB 的 `@` 文件还会被悄悄丢掉。现在图片以 base64 块经 stdin 发送，紧跟引用它的那条记录，新图片只会让历史变长。
+- **摘要请求不写缓存。** chem 已经让一次性摘要（例如压缩）不打插件自己的断点，但当前验证的 Claude Code 版本仍会在末尾放它自己的 1 小时断点，把只写不读的摘要按 2 倍价格写进缓存。现在这类请求会给 Claude 子进程设置 `DISABLE_PROMPT_CACHING=1`。
+
+### 数据
+
+**日常使用记录（不是对照实验）。** 数据来自维护者在 Windows 上 2026-09-13 到 2026-10-09 的 Pi 会话日志，共 630 次通过本插件的 Opus 请求。命中率按 `cacheRead / (input + cacheRead + cacheWrite)` 逐轮计算。
+
+| 分组 | 轮数 | 整体命中率 | 中位数 |
+| --- | ---: | ---: | ---: |
+| 全部 | 630 | 96.8% | 99.0% |
+| 上游阶段（模型 id `opus`） | 332 | 94.5% | 99.0% |
+| 本项目阶段（模型 id `claude-opus-5-5`） | 298 | 98.2% | 98.9% |
+| 距上一轮不到 5 分钟 | 598 | 97.6% | 99.0% |
+| 距上一轮 5 到 60 分钟 | 10 | 94.6% | 99.1% |
+| 距上一轮超过 60 分钟 | 3 | 0.0% | 0.0% |
+
+- **间隔在 5 到 25 分钟的 10 次。** 9 次命中率在 98% 以上，说明缓存确实活过了默认的 5 分钟。另 1 次隔 5.1 分钟却是 0%，原因不明。
+- **间隔超过 2 小时的 3 次。** 全部是 0%，和 1 小时有效期一致。
+- **量级估算。** 如果按 Opus 5.5 的 API 价格粗算，这 630 轮有缓存时的花费约为完全不命中时的 14%。这不是订阅账单，只用来看量级。
+- **上游阶段的图片。** 本轮新带图片的 6 次，命中率中位数只有 23.4%。还有连续 9 轮的缓存读取都停在 37,324 token，后面的历史每轮都在重写。这和"附件说明放在对话前面会改写前缀"的机制吻合，但日志里看不到实际请求，因果没有核实。本项目阶段没有带图片的轮次，所以内联图片的效果还没有真实数据。
+- **样本很少。** 5 到 60 分钟只有 10 个样本，超过 60 分钟只有 3 个，30 到 60 分钟之间完全没有数据。
+- **两个阶段不能直接比。** 两个阶段的日期、任务和 Claude Code 版本都不同，命中率差异不能全部算在本项目的改动上。
+
+**付费验证（受控测试）。** 2026-10-09 在 Windows 11 上用 Max 订阅跑缓存测试，第 2、3 轮命中率如下：
+- Sonnet：96.1% 和 95.9%
+- Haiku：98.3% 和 98.3%
+
+图片缓存测试也在门槛内通过，但没有记录具体数字。
+
+间隔 30 到 60 分钟的受控测试，以及由本插件执行的压缩请求的缓存测试，还没有做。
+
+## 测试情况
+
+| 环境 | 测试 | 结果 |
 | --- | --- | --- |
-| 图片传输 | 图片写入私有目录，在 prompt 末尾以 `@"路径"` 引用。基线版本的 Claude Code 对超过 256 KiB 的 `@` 文件既不附图也不报错；附件叙述排在整段记录之前，每加一张图都重写缓存前缀 | 图片以 base64 块经 stdin 发送，紧跟引用它的记录；缓存断点放在最后一条文本记录上。每次出现都计入 20 张、单张 20 MB、总计 100 MB 的限制 |
-| 内置插件隔离 | 基线版本的 Claude Code 在 print 模式默认加载 `cc-plugin-plugin-authoring`，初始化隔离检查报 `unexpected customizations`，所有请求失败 | `--settings` 中加入 `"plugin-authoring@builtin": false` |
-| 摘要请求缓存 | Pi 对压缩、分支摘要传 `cacheRetention: "none"` 时，Claude Code 仍在尾部放 1h 断点，整段摘要写入缓存 | 这类请求给 Claude 子进程设 `DISABLE_PROMPT_CACHING=1`，缓存写入为 0；普通请求不受影响 |
-| 模型选择器 | 列出 `sonnet`、`fable`、`opus`、`haiku` 四个别名 | 列出别名在基线版本中解析到的全名 `claude-sonnet-5-5`、`claude-fable-5-1`、`claude-opus-5-5`、`claude-haiku-4-5`；别名换到新型号时，doctor 提示 `picker still offers <旧 id>` |
-| 会话图片目录 | 每个会话维护私有图片目录与请求租约 | 图片不再落盘，删除图片目录与租约代码。旧版本遗留的图片目录在 Linux 与 macOS 上由过期目录回收处理；Windows 不执行过期目录回收，遗留目录不会自动删除，需在确认旧版本 Pi 进程全部退出后，手动删除临时目录中的 `pi-claude-code-provider-images-*` |
-| 维护脚本 | `capture-claude-breakpoints.js`、`model-matrix.js` 按别名查型号表 | 随型号全名一起更新，避免启动即失败 |
-| doctor 类型检查 | 较新 Pi 的 `ProviderModelConfig` 为联合类型，读取 `contextWindow` 无法通过类型检查 | 增加类型判断 |
-| 单元测试 | 按图片落盘与别名编写 | 按内联图片与型号全名更新 |
+| Linux，Node 22.23.1 和 24.16.0（2026-10-11 本地运行，非 GitHub Actions） | `npm run release:check` | 382 条：376 通过、0 失败、6 条仅限 Windows 的测试跳过 |
+| Windows 11 x64，Node 24.12.0 | `npm test` | 382 条：349 通过、0 失败、33 条仅限 POSIX 的测试跳过 |
+| Windows 11 x64，Max 订阅（2026-10-09，提交 `696d473`） | 全部 15 个付费阶段 | 全部通过，共启动 Claude 57 次 |
 
-兼容性变化：旧会话中保存的 `pi-claude-code-provider/opus` 等别名 id 不再可选，恢复这类会话需重新选择模型。完整记录见 [CHANGELOG.md](CHANGELOG.md)。
+Linux 和 macOS 还没有跑过付费阶段。
 
-## 已验证环境
+## 安装与使用
 
-Pi 与 Claude Code 的验证版本见 [DEVELOPING.md 兼容基线](DEVELOPING.md#compatibility-baseline)。以下验证在 Windows 11 x64、Node.js 24.12.0 上完成。
+### 要求
 
-`npm test`（Windows）：382 条，349 通过，33 条为平台相关跳过，0 失败；`npm run check` 通过。付费验证（`npm run test:paid:*`，2026-10-09，提交 `696d473`，Max 订阅）：全部 15 个阶段通过，共 57 次 Claude 启动。
+- [Pi](https://pi.dev) 0.86.1 或更新。
+- Claude Code 2.1.281 或更新。
+- 以上是最低版本；实际验证过的版本和平台见 [兼容基线](DEVELOPING.md#compatibility-baseline)。
+- 已用 Pro、Max、Team 或 Enterprise 订阅登录官方 Claude Code（`claude auth login`，可用 `claude auth status` 确认）。
+  - 不支持 API key，也不支持经 Bedrock、Vertex 或 Foundry 路由。
+  - 不支持通过 `CLAUDE_CODE_OAUTH_TOKEN` 登录。
+- 只有 Pi 从 npm 安装时，才需要 Node.js 22.19 或更新。
 
-| 阶段 | 结果 |
+### 安装
+
+```bash
+pi install git:github.com/syansunyang-collab/pi-claude-print-provider@v1.0.0
+```
+
+上面的命令固定在 `v1.0.0` 标签；去掉 `@v1.0.0` 则跟随默认分支。加 `-l` 可以只装到当前项目。
+
+如果之前装过上游的 npm 版，先执行 `pi remove npm:pi-claude-code-provider`。
+
+建议把 Claude Code 固定在已验证的版本，并关掉自动更新：
+
+```bash
+claude install <已验证的 Claude Code 版本>
+```
+
+然后在 Claude Code 设置的 `env` 里把 `DISABLE_AUTOUPDATER` 设为 `"1"`。Claude Code 升级后如果请求失败，先运行 doctor（见下文），它会列出已验证的版本。
+
+Windows 上如果 `claude` 是 npm 生成的 `.cmd` 包装脚本，插件无法直接启动它。请安装原生的 `claude.exe`，或把 `PI_CLAUDE_CODE_PROVIDER_PATH` 设为 `claude.exe` 的完整路径。
+
+### 使用
+
+- 在 `/model` 里选择 `pi-claude-code-provider` 下的型号：`claude-sonnet-5-5`、`claude-fable-5-1`、`claude-opus-5-5`、`claude-haiku-4-5`。
+- 命令行可以直接指定：`pi --model pi-claude-code-provider/claude-sonnet-5-5`。
+- 安装后或升级 Claude Code 后，运行 `/pi-claude-code-provider-doctor`。它检查版本、型号和工具桥，不消耗订阅额度。
+- `/pi-claude-code-provider-doctor report` 生成不含对话内容的诊断报告，分享前请先自己检查一遍。
+- 插件自带一个基于 Claude 的网页搜索工具，每次调用都消耗订阅额度。如果你已有别的搜索工具，可以设置 `PI_CLAUDE_CODE_PROVIDER_WEB_SEARCH=off` 关掉它。
+
+### 常用配置
+
+| 环境变量 | 作用 |
 | --- | --- |
-| `smoke`、`full`、`post-tools` | 基本应答、`@` 路径隔离、写入/编辑/bash 工具循环、失败工具恢复、图片输入、禁用工具排除、网页搜索均通过 |
-| `cache`、`cache-haiku` | 第 2、3 轮缓存命中：Sonnet 96.1% / 95.9%，Haiku 98.3% / 98.3% |
-| `cache-images`、`cache-images-haiku` | 只在第 1 轮附图，第 2、3 轮仍能正确回看历史图片，缓存命中与写入均在门槛内 |
-| `bridge`、`compat-npm` | npm 版 Pi 的工具桥往返通过 |
-| `bridge-standalone`、`compat-standalone` | 与基线同版本的官方 `pi-windows-x64.zip`（SHA256 已核对）中的 `pi.exe` 工具桥往返通过 |
-| `matrix`、`opus`、`fable` | Sonnet 与 Opus 的 low 至 max 五档、Haiku、Fable 均解析到对应全名型号；窗口与输出上限与选择器一致（Sonnet/Opus 1M / 128K，Fable 1M / 64K，Haiku 200K / 32K） |
+| `PI_CLAUDE_CODE_PROVIDER_PATH` | 指定 `claude` 可执行文件的路径 |
+| `PI_CLAUDE_CODE_PROVIDER_WEB_SEARCH` | `on`（默认）或 `off` |
+| `PI_CLAUDE_CODE_PROVIDER_TRANSCRIPT_BREAKPOINT` | `on`（默认）或 `off`。只在 Claude Code 拒绝多余缓存断点时才关，关掉就等于关掉缓存 |
+| `PI_CLAUDE_CODE_PROVIDER_THINKING_DISPLAY` | `summarized`（默认）、`omitted` 或 `off` |
+| `PI_CLAUDE_CODE_PROVIDER_METRICS_LOG` | 把不含对话内容的请求指标追加写入一个 JSONL 文件 |
 
-`src/compatibility.ts` 的 `VERIFIED_VERSIONS` 据此提升到本次验证的版本，doctor 对其报 verified。Linux 与 macOS 未在本分支做付费验证。
+完整的变量列表、超时设置和排障说明见 [DESIGN.md](DESIGN.md) 和 [DEVELOPING.md](DEVELOPING.md)。
 
-## 安装
+为了兼容已有的会话和配置，provider ID（`pi-claude-code-provider`）、doctor 命令和 `PI_CLAUDE_CODE_PROVIDER_*` 环境变量都沿用上游的名字，没有改。
 
-```bash
-pi install git:github.com/syansunyang-collab/pi-claude-code-provider@v0.6.0-fork.1
-```
+## 我们的改动（相对上游 0.6.0）
 
-已安装 npm 版上游时，先执行 `pi remove npm:pi-claude-code-provider`。
+- **适配新版 Claude Code。** 这个版本在 print 模式下会加载内置的 `plugin-authoring` 插件，导致每个请求都过不了隔离检查。现在它和 `agents-md`、`telemetry` 一起在 `--settings` 里被关掉。已验证基线见 [兼容基线](DEVELOPING.md#compatibility-baseline)；最低支持版本仍是 Pi 0.86.1、Claude Code 2.1.281。
+- **图片内联。** 图片以 base64 块经 stdin 发送，不再用 `@"路径"` 引用文件。
+- **图片不再落盘。** 删除了会话图片目录和图片租约代码。Windows 上旧版本留下的图片目录不会自动清理，需要手动删除。
+- **摘要请求不写缓存。** Pi 标记为 `cacheRetention: "none"` 的请求，会给 Claude 子进程设置 `DISABLE_PROMPT_CACHING=1`。
+- **使用完整型号名。** 选择器里列的是完整型号名，不再是 `sonnet`、`fable`、`opus`、`haiku` 这些别名；别名指向新型号时，doctor 会提示。用旧别名保存的会话需要重新选模型。
+- **Windows 维护。** 在 Windows 11 x64 上开发并跑过付费验证。
+- **测试与文档同步更新。**
 
-Claude Code 固定在兼容基线中的版本（`/pi-claude-code-provider-doctor` 也会列出），并在 Claude Code 设置的 `env` 中将 `DISABLE_AUTOUPDATER` 设为 `"1"`，关闭自动更新：
+## 致谢
 
-```bash
-claude install <兼容基线中的 Claude Code 版本>
-```
+本项目延续自 **chem** 的 [chem/pi-claude-code-provider](https://github.com/chem/pi-claude-code-provider)。整体设计、进程管理、只提议的工具桥、环境变量白名单，以及绝大部分测试，都出自 chem 之手，以 MIT 许可发布。感谢 chem 把它做得这么扎实、文档写得这么完整，我们才接得住。chem 的版权声明完整保留在 [LICENSE](LICENSE) 中。
 
-Windows 下 `claude` 若是 npm 生成的 `.cmd` 包装脚本，需安装原生 `claude.exe`，或将 `PI_CLAUDE_CODE_PROVIDER_PATH` 设为 `claude.exe` 的完整路径。
+## 为什么另开仓库
 
-## 使用
+chem 在 2026-09-27 发布 v0.6.0 后归档了上游仓库。Pi 和 Claude Code 都更新得很快，经常有破坏性变更。chem 在上游 README 里说明这是业余项目，之后不再维护，也请大家不要再提 issue 和 PR。这个决定完全合理。
 
-- 在 `/model` 中选择 `pi-claude-code-provider` 下的型号，或执行 `pi --model pi-claude-code-provider/claude-sonnet-5-5`。
-- 安装插件、升级 Claude Code 后运行 `/pi-claude-code-provider-doctor`，检查版本、型号与工具桥接，不消耗订阅额度。
-- 已有其他搜索工具时设 `PI_CLAUDE_CODE_PROVIDER_WEB_SEARCH=off`，插件不再注册自带的 Claude 搜索工具。
+我们自己每天都在用这个插件，所以另开一个仓库，继续适配新版 Claude Code 和 Windows，并换了名字，免得和 chem 的原包混淆。本仓库的问题由我们负责，请在这里反馈，不要去打扰上游。
 
-## 已知限制与排障
+## 合规、商标与遥测说明
 
-- **升级 Claude Code 后所有请求报 `Claude Code loaded unexpected customizations (plugins: cc-plugin-…)`**：新版本加入了内置插件。按报出的名称，把 `<去掉 cc-plugin- 前缀的名称>@builtin: false` 加入 `src/claude-args.ts` 的 `enabledPlugins`。
-- **所有请求报 `Claude Code initialized with an unexpected tool set`**：Pi 声明的工具与 Claude Code 实际加载的工具不一致。基线版本的 Claude Code 会跳过参数 schema 顶层含 `oneOf`、`anyOf` 或 `allOf` 的 MCP 工具，插件的工具集校验随即拒绝请求。比对报错中的 expected 清单与实际工具，找出缺失的工具，把它的参数 schema 改为顶层 `type: "object"` 加 `properties`，字段互斥或条件必填改在执行入口校验。
-- **别名换到新型号**：doctor 提示 `picker still offers <旧 id>` 时，按新型号更新 `src/catalog.ts`。
-- **运行单元测试**：先执行 `npm run setup:dev`。测试假定 `PI_CLAUDE_CODE_PROVIDER_WEB_SEARCH` 为默认值，环境中设为 `off` 时，需在测试进程中去掉该变量。
+- **运行方式。** 本插件运行的是官方、未经修改的 Claude Code 程序，依赖你自己在 Claude Code 里完成的登录。它不提供 Claude 登录入口，不经手 Claude 凭据，也不支持共享账号。
+- **商标与非关联声明。** "Claude" 和 "Claude Code" 是 Anthropic, PBC 的商标。本项目的名称和文档使用这两个词，只是为了说明插件运行的是什么，即官方 Claude Code CLI。pi-claude-print-provider 是独立的社区项目，与 Anthropic 没有任何关联，未获 Anthropic 认可、赞助或支持，也不是 Anthropic 的官方产品。
+- **条款由你自己负责。** 是否符合你所用套餐的条款，由使用者自行负责。请阅读 Anthropic 的 [Legal and compliance](https://code.claude.com/docs/en/legal-and-compliance) 页面和帮助文章 [Use the Claude Agent SDK with your Claude plan](https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan)。该文章 2026-10-07 的更新说，`claude -p` 和第三方应用仍然可以使用订阅额度；6 月的更新用了 "For now" 的说法，政策随时可能调整。
+- **遥测。** 沿用上游做法，每个 Claude 子进程都设置 `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`，并通过 `--settings` 关闭内置的 `telemetry@builtin` 插件。这写死在 `src/claude-args.ts` 和 `src/auth.ts` 里，目前没有开关可以重新打开。
+
+## 许可证
+
+MIT。Copyright (c) 2026 chem；Copyright (c) 2026 Kai Mercer。全文见 [LICENSE](LICENSE)。
 
 ---
 
-# Upstream README (0.6.0, install and model names updated for this fork)
+<a id="english"></a>
 
-> **This project is mothballed after the release of v0.6.0.** Pi and Claude Code are both extremely fast-moving projects that publish breaking changes regularly, and this was a hobby project rather than a professional venture, so I have other plans for my time and my tokens. I encourage people to look for other providers, such as [pi-claude-bridge](https://github.com/elidickinson/pi-claude-bridge), which is built on the Agent SDK. Please do not report further issues or submit pull requests. If Pi and Claude Code stabilize in future months, I may revisit this project. I thank my users for their kind words and wish everyone good luck with their own efforts.
+# pi-claude-print-provider (English)
 
-A [Pi](https://pi.dev) package that creates a provider for Claude family models from a subscription-authenticated Claude Code installation by launching Anthropic's installed `claude` executable in documented non-interactive print mode. Pi remains fully in charge of the session: branching, compaction, and history behave like any other Pi provider, and every tool runs visibly in Pi — the Claude process can propose tool calls but never execute anything on its own. The goal is simple: the convenience of your Claude subscription in Pi, with the fewest possible surprises.
+**Use your own Claude subscription in Pi through the official Claude Code. No token handling, and Pi runs every tool.**
 
-This package never imitates private OAuth traffic, does not use the Agent SDK, and does not modify Claude's internal session files. It never reads Claude credentials or uses an Anthropic API key.
+## Why this project exists
 
-This project was developed using frontier AI models under human guidance. Almost all of the docs and code were written by machines except for this introductory material. The project may be over-engineered in some respects; that's fine. If you enjoy this package, please star it on github.
+I use [Pi](https://github.com/earendil-works/pi) to work with my Claude, GPT, and other AI subscriptions side by side, and I needed a provider for my Claude subscription.
 
-## Requirements
+Anthropic is strict about third-party tools using subscription accounts. Some community approaches read Claude's OAuth token from the local machine, or make requests look as if they came from the official Claude Code. Those approaches break Anthropic's terms, and some people have had their accounts banned for it.
 
-- [Pi](https://pi.dev) 0.86.1 or newer, installed from npm or a standalone build
-- Claude Code 2.1.281 or newer
-- Claude Code logged in to an eligible Pro, Max, Team, or Enterprise claude.ai subscription
-- Node.js 22.19 or newer only when Pi itself is installed from npm; the standalone build needs no separate Node installation
+So I took the compliant route: the official `claude` program on your machine signs in and sends its own requests, and the provider never touches credentials. This provider continues chem's [pi-claude-code-provider](https://github.com/chem/pi-claude-code-provider), which was designed this way from the start.
 
-These are minimum versions; see the [compatibility baseline](DEVELOPING.md#compatibility-baseline) for tested versions and platforms. The doctor warns about older versions and unverified platforms.
+## Why it is compliant
 
-The provider requires first-party subscription authentication. API keys and routing through Bedrock, Vertex, or Foundry are unsupported. If `claude` is not on `PATH`, set `PI_CLAUDE_CODE_PROVIDER_PATH` to its executable path.
+Anthropic's [Legal and compliance](https://code.claude.com/docs/en/legal-and-compliance) page says third-party developers may not collect, store, or intermediate Claude.ai credentials or session tokens. It also says:
 
-## Install
+> "Nor does it prevent an end user from signing in to the unmodified Claude Code binary with their own Claude subscription"
+
+This provider stays inside that line:
+
+- **No credential handling.** It never reads, copies, or forwards OAuth tokens or API keys. The official Claude Code handles sign-in (`claude auth login`); before starting, the provider only runs `claude auth status` to check the login.
+- **No modified binary.** It runs the unmodified `claude` you installed, in its documented non-interactive mode (`claude -p`).
+- **No client impersonation.** It builds no requests to Anthropic itself and forges no headers or client identity. Every network request comes from the official `claude`.
+- **Credential variables blocked.** Claude child processes get an allowlisted environment. If `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL`, `CLAUDE_CODE_OAUTH_TOKEN`, or the Bedrock/Vertex switches are passed in, the provider refuses to start the process.
+
+You remain responsible for following your plan's terms; see the compliance notes at the end.
+
+## How it works
+
+1. For each Pi request, the provider starts a fresh `claude -p` process and sends Pi's current conversation on stdin.
+2. When Claude wants a tool, it calls an MCP bridge the provider supplies. The bridge hands the call back as a proposal and rejects every `tools/call`.
+3. Pi runs the tool in its own UI, through its normal hooks and permission checks, and the result goes into the next request.
+
+Pi owns sessions, branches, and compaction; Claude Code keeps no session of its own. The provider has no runtime dependencies.
+
+## Caching and billing
+
+### Why caching matters
+
+The provider resends the whole conversation every turn, so whether the prompt cache hits makes a large difference. Anthropic's published [API prices](https://platform.claude.com/docs/en/build-with-claude/prompt-caching) put cache reads at usually 0.1× the base input price (0.05× for Sonnet 5.5 and Opus 5.5), 5-minute cache writes at 1.25×, and 1-hour cache writes at 2×.
+
+On a subscription, usage counts against your plan limits. Anthropic does not publish how limits map to tokens, but a cache miss makes the same conversation use more of your plan. With usage credits enabled, usage beyond the plan is billed separately. The provider always reports a cost of 0 to Pi because it cannot know how a subscription is billed.
+
+### What loses the cache
+
+- **Long gaps.** The API caches for 5 minutes by default. The provider marks the history with a 1-hour breakpoint, so intermittent use within an hour can still hit; after more than an hour the history is written again.
+- **Changing content that Claude Code appends.** By default Claude Code appends a changing `<total_tokens>` reminder, which breaks the cache completely. The provider turns it off with `totalTokensReminder: "off"`.
+- **Claude Code upgrades.** Claude Code puts a billing header with its own version, never cached, at the very start, so the first turn after an upgrade starts cold.
+- **Many parallel tool calls in one step.** Each breakpoint looks back about 20 blocks, so a step with about 19 or more parallel tool calls silently loses reuse.
+- **A changing prefix.** For example, Haiku 4.5 receives environment content ahead of the conversation and misses whenever it changes. Haiku 4.5 also caches nothing below 4096 tokens.
+
+### chem's design
+
+The core caching design is chem's:
+- append-only history with a fixed tool order;
+- the `<total_tokens>` reminder turned off;
+- a provider-owned 1-hour breakpoint on the last history block. It has to be 1 hour because the API requires longer TTLs first and Claude Code's own markers are 1-hour, at the cost of a higher write price than 5 minutes;
+- `npm run capture:claude-breakpoints`, which checks the request shape without using quota;
+- four paid cache stages: turns 2 and 3 must hit at least 80% and write less than a quarter of turn 1's cache write.
+
+### Our changes
+
+- **Inline images.** Upstream wrote images to files and referenced them as `@"path"`. Claude Code narrated those reads ahead of the conversation, so every new image rewrote the cached prefix, and the currently verified Claude Code release silently drops `@` files over 256 KiB. Images now go on stdin as base64 blocks, right after the record that references them, so a new image only extends the history.
+- **No cache writes for summaries.** chem already kept the provider's breakpoint off one-shot summaries such as compaction. The currently verified Claude Code release still adds its own 1-hour breakpoint and writes the summary, which is never read, to the cache at 2×. These requests now run the Claude child with `DISABLE_PROMPT_CACHING=1`.
+
+### Data
+
+**Real usage, not a controlled test.** These numbers come from the maintainer's Pi session logs on Windows, 2026-09-13 to 2026-10-09: 630 Opus requests through this provider. Hit rate is `cacheRead / (input + cacheRead + cacheWrite)` per turn.
+
+| Group | Turns | Overall hit | Median |
+| --- | ---: | ---: | ---: |
+| All | 630 | 96.8% | 99.0% |
+| Upstream phase (model id `opus`) | 332 | 94.5% | 99.0% |
+| This project (model id `claude-opus-5-5`) | 298 | 98.2% | 98.9% |
+| Less than 5 min since the previous turn | 598 | 97.6% | 99.0% |
+| 5 to 60 min | 10 | 94.6% | 99.1% |
+| More than 60 min | 3 | 0.0% | 0.0% |
+
+- **The 10 gaps of 5 to 25 minutes.** 9 hit at 98% or more, so the cache did outlive the 5-minute default. The other one, after 5.1 minutes, hit 0% for no known reason.
+- **The 3 gaps of more than 2 hours.** All hit 0%, consistent with a 1-hour lifetime.
+- **Order of magnitude.** At Opus 5.5 API prices, these 630 turns with caching cost roughly 14% of what they would with no cache hits at all. This is not a subscription bill; it only shows the scale.
+- **Images in the upstream phase.** The 6 turns that added a new image had a median hit rate of only 23.4%, and in a run of 9 turns the cache read stayed at 37,324 tokens while the rest of the history was rewritten each turn. That matches the mechanism of attachment narration rewriting the prefix, but the logs do not show the actual requests, so the cause is unverified. The current phase has no image turns, so there is no real-usage data yet on inline images.
+- **Small samples.** There are only 10 samples for 5 to 60 minutes and 3 for more than 60, and none between 30 and 60 minutes.
+- **The two phases are not directly comparable.** They differ in dates, tasks, and Claude Code versions, so the difference in hit rate cannot all be credited to this project's changes.
+
+**Paid validation (controlled).** On 2026-10-09, on Windows 11 with a Max subscription, the cache stages hit as follows on turns 2 and 3:
+- Sonnet: 96.1% and 95.9%
+- Haiku: 98.3% and 98.3%
+
+The image cache stages also passed their thresholds, but no figures were recorded.
+
+Controlled tests for 30 to 60 minute gaps and for compaction run through this provider have not been done yet.
+
+## Tests
+
+| Environment | Test | Result |
+| --- | --- | --- |
+| Linux, Node 22.23.1 and 24.16.0 (run locally 2026-10-11, not GitHub Actions) | `npm run release:check` | 382 tests: 376 pass, 0 fail, 6 Windows-only skipped |
+| Windows 11 x64, Node 24.12.0 | `npm test` | 382 tests: 349 pass, 0 fail, 33 POSIX-only skipped |
+| Windows 11 x64, Max subscription (2026-10-09, commit `696d473`) | all 15 paid stages | all passed, 57 Claude launches |
+
+Paid stages have not been run on Linux or macOS.
+
+## Install and use
+
+### Requirements
+
+- [Pi](https://pi.dev) 0.86.1 or newer.
+- Claude Code 2.1.281 or newer.
+- These are minimums; see the [compatibility baseline](DEVELOPING.md#compatibility-baseline) for tested versions and platforms.
+- The official Claude Code signed in with a Pro, Max, Team, or Enterprise subscription (`claude auth login`; check with `claude auth status`).
+  - API keys and routing through Bedrock, Vertex, or Foundry are not supported.
+  - Logins through `CLAUDE_CODE_OAUTH_TOKEN` are not supported.
+- Node.js 22.19 or newer, only when Pi itself is installed from npm.
+
+### Install
 
 ```bash
-pi install git:github.com/syansunyang-collab/pi-claude-code-provider@v0.6.0-fork.1
+pi install git:github.com/syansunyang-collab/pi-claude-print-provider@v1.0.0
 ```
 
-To install directly from GitHub's default branch:
+The command above pins the `v1.0.0` tag; drop `@v1.0.0` to follow the default branch. Add `-l` for a project-local install.
+
+If you installed the upstream npm package, remove it first with `pi remove npm:pi-claude-code-provider`.
+
+We recommend pinning Claude Code to the verified version and turning off auto-update:
 
 ```bash
-pi install git:github.com/syansunyang-collab/pi-claude-code-provider
+claude install <verified Claude Code version>
 ```
 
-Add `-l` for a project-local installation. Pi loads project packages only after the project is trusted; use `pi config` to enable or disable the extension.
+Then set `DISABLE_AUTOUPDATER` to `"1"` in the `env` of Claude Code's settings. If requests fail after a Claude Code update, run the doctor (below); it names the verified version.
 
-For a local checkout, use `pi install /absolute/path/to/pi-claude-code-provider`. The startup `[Extensions]` list shows `syansunyang-collab/pi-claude-code-provider` for Git and `pi-claude-code-provider` for npm or a local checkout with that directory name. A renamed checkout shows its directory name. These labels apply to npm and standalone Pi alike.
+On Windows, if `claude` is an npm-generated `.cmd` shim, the provider cannot launch it. Install the native `claude.exe`, or set `PI_CLAUDE_CODE_PROVIDER_PATH` to the full path of `claude.exe`.
 
-## Use
+### Use
 
-Open `/model` and choose `claude-sonnet-5-5`, `claude-fable-5-1`, `claude-opus-5-5`, or `claude-haiku-4-5` under `pi-claude-code-provider`.
+- In `/model`, pick a model under `pi-claude-code-provider`: `claude-sonnet-5-5`, `claude-fable-5-1`, `claude-opus-5-5`, or `claude-haiku-4-5`.
+- From the command line: `pi --model pi-claude-code-provider/claude-sonnet-5-5`.
+- After installing, or after a Claude Code update, run `/pi-claude-code-provider-doctor`. It checks versions, models, and the tool bridge without using subscription quota.
+- `/pi-claude-code-provider-doctor report` produces a diagnostic report without conversation content. Review it before sharing.
+- The bundled Claude-backed web search tool uses subscription quota on every call. If you already have another search tool, set `PI_CLAUDE_CODE_PROVIDER_WEB_SEARCH=off` to turn it off.
 
-To select one directly:
-
-```text
-/model pi-claude-code-provider/claude-sonnet-5-5
-```
-
-From the command line, use `pi --model pi-claude-code-provider/claude-sonnet-5-5`.
-
-Sonnet, Fable, and Opus support Pi thinking levels from `low` through `max`. Haiku uses Claude Code's default thinking, even when Pi shows thinking as off. Sonnet, Fable, and Opus have a 1M context window on every plan, including Pro; Haiku has 200K.
-
-Fable availability and billing vary by subscription tier; see Anthropic's [Fable plan policy](https://support.claude.com/en/articles/15424964-claude-fable-5-on-your-plan).
-
-To see which model served a response, inspect `responseModel` in Pi's JSON output.
-
-Pi's active tools are advertised through MCP. If the model omits the MCP prefix on exactly `bash`, `read`, `edit`, or `write`, the provider accepts that name only when the same lowercase Pi tool is active. Bare capitalized names such as `Bash` and bare names of other tools remain errors. Arguments must still follow Pi's advertised schema; the provider does not translate Claude Code's built-in argument fields or timeout units.
-
-After installation or an upstream update, run:
-
-```text
-/pi-claude-code-provider-doctor
-```
-
-The doctor checks versions, model aliases, and the tool bridge without consuming subscription quota. It names the provider version Pi actually loaded and its install directory, which exposes an older project-local or duplicate installation. It also reports recent prompt-cache reuse and context-window mismatches. Its last-request metrics describe the request whose process cleanup and lifecycle finished most recently; overlapping requests can finish out of start order, and a terminal response can appear before its metrics finalize.
-
-Run `/pi-claude-code-provider-doctor report` for a content-free diagnostic report. Inspect it before sharing it.
-
-The `pi_claude_code_provider_web_search` tool uses Claude's WebSearch and WebFetch. It always uses Sonnet at medium effort, regardless of the selected model, and has a three-minute limit. Pi offers it to every model, including other providers' models, so each call consumes Claude subscription capacity. Its prompt guidance defers to any other web-search tool you have. To remove it entirely, set `PI_CLAUDE_CODE_PROVIDER_WEB_SEARCH=off`; for a single launch, `pi --exclude-tools pi_claude_code_provider_web_search` also works. If it is unexpectedly unavailable, run the doctor, which reports its state, then check that variable, Pi's tool filters, and whether another extension owns the name.
-
-## Subscription usage
-
-Provider and web-search requests consume Claude subscription capacity; canceling a running request may still consume it. Optional usage credits may incur additional spend after plan limits. The package reports token counts when available, but shows zero monetary cost because it cannot determine subscription billing.
-
-This project uses Anthropic's documented [`claude --print` interface](https://code.claude.com/docs/en/cli-reference). Anthropic explains [subscription limits for third-party usage](https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan) and [usage credits](https://support.claude.com/en/articles/11145838-use-claude-code-with-your-pro-or-max-plan).
-
-Pi shows Claude's rate-limit warnings and reset times when available.
-
-## Compatibility limitation
-
-Claude Code's public headless protocol cannot accept arbitrary past assistant messages or tool results. The provider therefore sends Pi's current history on every request. Pi still owns branching, compaction, and tool execution, but this transport uses more context than Anthropic's Messages API. See [DESIGN.md](DESIGN.md#compatibility-and-performance) for caching and performance details.
-
-Images remain available throughout the current Pi context. Each request allows up to 20 images, subject to size limits; [DESIGN.md](DESIGN.md#request-and-transcript-transport) describes their transport.
-
-## Configuration
+### Common settings
 
 | Variable | Purpose |
 | --- | --- |
-| `PI_CLAUDE_CODE_PROVIDER_ACKNOWLEDGED_PLATFORM` | Hide the startup advisory for one exact platform/architecture (for example `linux/arm64`). The doctor still reports its verification status. |
-| `PI_CLAUDE_CODE_PROVIDER_BORROW_SOLE_DIRECTORY` | `on` lets a tool-bearing side request without a cwd declaration borrow the sole registered session's directory. Off by default because that directory may be wrong. |
-| `PI_CLAUDE_CODE_PROVIDER_PATH` | Override the `claude` executable path. |
-| `PI_CLAUDE_CODE_PROVIDER_METRICS_LOG` | Append content-free request and search metrics as JSONL. |
-| `PI_CLAUDE_CODE_PROVIDER_IDLE_TIMEOUT_MS` | Override the five-minute protocol-idle timeout for provider requests, in positive milliseconds. |
-| `PI_CLAUDE_CODE_PROVIDER_TOTAL_TIMEOUT_MS` | Override the 30-minute timeout from Claude launch through response processing, including response observers, in positive milliseconds. |
-| `PI_CLAUDE_CODE_PROVIDER_MCP_READY_TIMEOUT_MS` | Override the five-second tool bridge readiness timeout, in positive milliseconds. |
-| `PI_CLAUDE_CODE_PROVIDER_THINKING_DISPLAY` | `summarized` (default), `omitted` (hide thinking text), or `off` (disable the display request if Claude Code rejects it). |
-| `PI_CLAUDE_CODE_PROVIDER_WEB_SEARCH` | `on` (default) or `off`. `off` leaves `pi_claude_code_provider_web_search` unregistered, so no model sees the tool or its prompt guidance. Any other value also leaves it unregistered and shows a warning. Takes effect at the next Pi start or `/reload`. |
-| `PI_CLAUDE_CODE_PROVIDER_TRANSCRIPT_BREAKPOINT` | `on` (default) or `off`. Turn it off only if Claude Code rejects excess cache breakpoints; this disables the provider's prompt caching. |
+| `PI_CLAUDE_CODE_PROVIDER_PATH` | Path to the `claude` executable |
+| `PI_CLAUDE_CODE_PROVIDER_WEB_SEARCH` | `on` (default) or `off` |
+| `PI_CLAUDE_CODE_PROVIDER_TRANSCRIPT_BREAKPOINT` | `on` (default) or `off`. Turn it off only if Claude Code rejects extra cache breakpoints; off disables caching |
+| `PI_CLAUDE_CODE_PROVIDER_THINKING_DISPLAY` | `summarized` (default), `omitted`, or `off` |
+| `PI_CLAUDE_CODE_PROVIDER_METRICS_LOG` | Append request metrics, without conversation content, to a JSONL file |
 
-Metrics exclude prompts, messages, queries, output, credentials, stderr, and temporary paths. On POSIX, the log is mode 0600; Windows uses the selected location's ACL.
+The full list of variables, timeouts, and troubleshooting is in [DESIGN.md](DESIGN.md) and [DEVELOPING.md](DEVELOPING.md).
 
-Claude receives an allowlisted environment, including `CLAUDE_CONFIG_DIR` for a relocated configuration and `NODE_EXTRA_CA_CERTS` for a proxy's CA bundle.
+For compatibility with existing sessions and settings, the provider ID (`pi-claude-code-provider`), the doctor command, and the `PI_CLAUDE_CODE_PROVIDER_*` variables keep their upstream names.
 
-## Security and troubleshooting
+## What's different from upstream 0.6.0
 
-Pi packages run with your permissions; review the source before installation. Claude runs in Pi's session working directory and can read some project files at startup. Its proposed file and shell actions run as visible Pi tools. The provider suppresses user and project Claude customizations, but administrator-managed settings, hooks, and MCP policy can still run. See [DESIGN.md](DESIGN.md#what-claude-code-adds-on-its-own) for startup behavior and [SECURITY.md](SECURITY.md) for vulnerability reporting.
+- **Support for the current Claude Code.** The verified release loads its built-in `plugin-authoring` plugin in print mode, which made every request fail the isolation check. It is now disabled in `--settings` along with `agents-md` and `telemetry`. Verified baseline: see the [compatibility baseline](DEVELOPING.md#compatibility-baseline). The minimum stays Pi 0.86.1, Claude Code 2.1.281.
+- **Inline images.** Images go on stdin as base64 blocks instead of `@"path"` file references.
+- **No image files on disk.** The session image store and image leases are gone. On Windows, image directories left by earlier versions are not cleaned up automatically and must be removed by hand.
+- **No cache writes for summaries.** Requests Pi marks `cacheRetention: "none"` run the Claude child with `DISABLE_PROMPT_CACHING=1`.
+- **Full model IDs.** The picker lists full model IDs instead of the `sonnet`, `fable`, `opus`, and `haiku` aliases, and the doctor warns when an alias moves to a newer model. Sessions saved with an old alias ID need a model reselected.
+- **Windows maintenance.** Developed and paid-verified on Windows 11 x64.
+- **Tests and docs updated to match.**
 
-Tool-bearing side requests need a registered Pi session or a working-directory declaration in the system prompt. That declaration is caller-controlled; see [DESIGN.md](DESIGN.md#process-and-storage-lifecycle) for routing details.
+## Acknowledgements
 
-The provider rejects detected tool arguments aimed at its private request and image directories, including equivalent path spellings resolved against the request's working directory. It also recognizes the temporary directory's alias spellings, such as macOS's `/var/folders` for `/private/var/folders`. This guard is a heuristic: it does not follow other symlinks or interpret arbitrary shell expressions. Pi tools run with your permissions.
+This project continues [chem/pi-claude-code-provider](https://github.com/chem/pi-claude-code-provider) by **chem**. The design, the process supervision, the proposal-only tool bridge, the env allowlist, and almost all of the tests are chem's work, released under the MIT license. Thank you, chem, for building it carefully and documenting it so thoroughly that picking it up was possible. chem's copyright notice is kept in [LICENSE](LICENSE).
 
-### Troubleshooting
+## Why a new repo
 
-- **Provider missing or unavailable:** run `/pi-claude-code-provider-doctor`, correct the problem it reports, then run `/reload`.
-- **Windows reports Claude Code missing although `claude` works in your shell:** that `claude` is probably a `.cmd` or `.bat` shim, such as an npm install creates, which cannot run without a shell. Install the native Claude Code (`claude.exe`), or set `PI_CLAUDE_CODE_PROVIDER_PATH` to Claude Code's JavaScript entry point.
-- **Requests fail right after Claude Code updated:** run the doctor. If it reports your Claude Code version as unverified, install the tested version it names with `claude install <version>`. To avoid a repeat, set `"autoUpdatesChannel": "stable"` in Claude Code's settings, which waits about a week and skips releases with major regressions, or set `DISABLE_AUTOUPDATER` to `"1"` in their `env`. See [Claude Code's setup guide](https://code.claude.com/docs/en/setup).
-- **Authentication or subscription failure:** run `claude auth status` and sign in with an eligible subscription. For rate-limit or billing errors, check your subscription limits and usage-credit settings. Logins through `CLAUDE_CODE_OAUTH_TOKEN` are unsupported.
-- **Tools fail or requests report `mcp_startup`:** run the doctor to check the tool bridge handshake.
-- **"The model refused to complete the request":** Fable, Opus 5.5, and Opus 5 run safety classifiers, most often triggered by cybersecurity and biology content, including context such as project files. Claude Code can re-run a flagged request on another model, but the provider turns that switch off because it cannot publish a response rewritten mid-stream, so the request ends with this error and Pi does not retry it. See Anthropic's [automatic model fallback](https://code.claude.com/docs/en/model-config#automatic-model-fallback).
-- **A request keeps failing:** run `/pi-claude-code-provider-doctor report` and inspect the report before sharing it.
+chem archived the upstream repository after releasing v0.6.0 on 2026-09-27. Pi and Claude Code both ship breaking changes often. chem explained in the upstream README that the project was a hobby with no further maintenance planned, and asked people not to file more issues or pull requests. That decision is entirely fair.
 
-## Development and license
+We use this provider every day, so we started a separate repository to keep it working with newer Claude Code releases and on Windows, under a new name so it is not confused with chem's original package. Problems in this repository are ours; please report them here, not upstream.
 
-See [DEVELOPING.md](DEVELOPING.md), [CONTRIBUTING.md](CONTRIBUTING.md), and [DESIGN.md](DESIGN.md). Licensed under MIT.
+## Compliance, trademark, and telemetry
+
+- **How it runs.** This provider runs the official, unmodified Claude Code binary and relies on the login you make in Claude Code yourself. It does not offer Claude sign-in, handle Claude credentials, or support shared accounts.
+- **Trademark and non-affiliation.** "Claude" and "Claude Code" are trademarks of Anthropic, PBC. They appear in this project's name and docs only to describe what the provider runs: the official Claude Code CLI. pi-claude-print-provider is an independent community project. It is not affiliated with, endorsed by, sponsored by, or supported by Anthropic, and it is not an official Anthropic product.
+- **Your terms are your responsibility.** You are responsible for following Anthropic's terms for your plan. Read Anthropic's [Legal and compliance](https://code.claude.com/docs/en/legal-and-compliance) page and the help article [Use the Claude Agent SDK with your Claude plan](https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan). Its 2026-10-07 update says `claude -p` and third-party apps can still use subscription limits; the June update says "For now", so the policy may change.
+- **Telemetry.** As upstream did, every Claude child gets `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`, and `--settings` disables the built-in `telemetry@builtin` plugin. This is hard-coded in `src/claude-args.ts` and `src/auth.ts`; there is currently no option to turn it back on.
+
+## License
+
+MIT. Copyright (c) 2026 chem; Copyright (c) 2026 Kai Mercer. See [LICENSE](LICENSE).

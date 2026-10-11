@@ -1,19 +1,20 @@
 {
-  "name": "pi-claude-code-provider",
-  "version": "0.6.0-fork.1",
+  "name": "pi-claude-print-provider",
+  "version": "1.0.0",
   "type": "module",
-  "description": "Windows maintenance fork of pi-claude-code-provider for Claude Code 2.1.292: your Claude subscription in Pi through Claude Code's documented print mode.",
-  "author": "chem <sineverbisnon@gmail.com>",
+  "description": "Your own Claude subscription in Pi through the official, unmodified claude -p. Pi runs every tool. Continued from chem/pi-claude-code-provider.",
+  "author": "Kai Mercer <syansunyang@gmail.com>",
+  "contributors": ["chem (original author, https://github.com/chem/pi-claude-code-provider)"],
   "license": "MIT",
-  "keywords": ["pi-package", "pi-extension", "claude-code", "subscription"],
+  "keywords": ["pi-package", "pi-extension", "claude-code", "subscription", "claude", "provider"],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/syansunyang-collab/pi-claude-code-provider.git"
+    "url": "git+https://github.com/syansunyang-collab/pi-claude-print-provider.git"
   },
   "bugs": {
-    "url": "https://github.com/syansunyang-collab/pi-claude-code-provider/issues"
+    "url": "https://github.com/syansunyang-collab/pi-claude-print-provider/issues"
   },
-  "homepage": "https://github.com/syansunyang-collab/pi-claude-code-provider#readme",
+  "homepage": "https://github.com/syansunyang-collab/pi-claude-print-provider#readme",
   "files": [
     "bridge",
     "index.ts",
