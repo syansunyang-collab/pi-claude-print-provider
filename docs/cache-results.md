@@ -37,7 +37,7 @@ node scripts/summarize-cache-usage.js
 
 ## 如何理解
 
-这个样本显示长会话中缓存复用率很高，但命中率不是费用折扣，也不能直接换算成订阅额度。缓存读取和写入都计量；provider 报告的美元费用为 0，表示它不知道订阅账单。
+Pi 可通过配套费用估算扩展，按模型公开 API 单价显示普通输入、缓存读写和输出的等价费用。
 
 1 小时缓存写入价格为基础输入价格的 2 倍；5 分钟写入价格为 1.25 倍。因此 1 小时写入是 5 分钟写入价格的 **1.6 倍**。本样本的缓存写入全部记为 1 小时档。
 
@@ -49,4 +49,4 @@ The session recorded **786 requests**: 1,572 uncached input tokens, 382,332,940 
 
 Use `cacheRead / (input + cacheRead + cacheWrite)`. `cacheWrite1h` is already included in `cacheWrite`; output is excluded from the hit-rate denominator. The anonymized [request data](data/cache-usage-20261102.csv) and [summary](data/cache-summary-20261102.json) can be reproduced with `node scripts/summarize-cache-usage.js` from the repository root. The script uses Node's standard library and makes no Claude requests or network calls.
 
-A 1-hour cache write costs 2× base input, versus 1.25× for a 5-minute write, so the 1-hour write price is 1.6× the 5-minute price. All cache writes in this sample were reported in the 1-hour tier. Cache hit rate measures input-token reuse, not a subscription bill or a fee discount.
+A 1-hour cache write costs 2× base input, versus 1.25× for a 5-minute write, so the 1-hour write price is 1.6× the 5-minute price. All cache writes in this sample were reported in the 1-hour tier. The companion estimation extension can display API-equivalent costs in Pi using the model's published input, cache, and output prices.
