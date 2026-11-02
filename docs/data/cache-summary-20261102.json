@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "dataSha256": "c01f3fbcb3e554e7646dc7a6806507661e91eebae82998790ddafe657146b44a",
+  "groups": {
+    "legacy-audit": {
+      "requests": 786,
+      "totals": {
+        "input": 1572,
+        "output": 2583463,
+        "cacheRead": 382332940,
+        "cacheWrite": 4940382,
+        "cacheWrite1h": 4940382
+      },
+      "promptTokens": 387274894,
+      "weightedHitPercent": 98.7239157310311,
+      "meanHitPercent": 98.18100495880904,
+      "medianHitPercent": 99.28080057785333,
+      "firstHitPercent": 0,
+      "lastHitPercent": 99.66631887830302,
+      "zeroHitRequests": 3,
+      "requestsAtLeast95Percent": 754,
+      "requestsAtLeast99Percent": 492,
+      "adjacentRequests": 785,
+      "gapsOver5Minutes": 28,
+      "samePhasePairs": 782,
+      "samePhasePairsWith303TokenTail": 779,
+      "maxPromptTokens": 899578
+    }
+  }
+}

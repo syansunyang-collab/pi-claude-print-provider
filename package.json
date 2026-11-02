@@ -2,7 +2,7 @@
   "name": "pi-claude-print-provider",
   "version": "1.0.1",
   "type": "module",
-  "description": "Your own Claude subscription in Pi through the official, unmodified claude -p. Pi runs every tool. Continued from chem/pi-claude-code-provider.",
+  "description": "Use your own Claude subscription in Pi through the unmodified Claude Code CLI. Pi runs the tools; images stream over stdin and CLI telemetry stays off.",
   "author": "Kai Mercer <syansunyang@gmail.com>",
   "contributors": ["chem (original author, https://github.com/chem/pi-claude-code-provider)"],
   "license": "MIT",
@@ -17,6 +17,7 @@
   "homepage": "https://github.com/syansunyang-collab/pi-claude-print-provider#readme",
   "files": [
     "bridge",
+    "docs",
     "index.ts",
     "src",
     "CHANGELOG.md",

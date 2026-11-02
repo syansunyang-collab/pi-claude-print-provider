@@ -1,5 +1,14 @@
 # Changelog
 
+## [Unreleased]
+
+### Documentation and data
+
+- Refresh the project description, image transport documentation, and maintained repository contact information.
+- Publish the 786-request cache dataset and a local Node reproduction script: 98.7% overall cache reuse and a 99.3% median.
+- Correct the one-hour versus five-minute cache-write price comparison and update retry accounting guidance.
+- Add regression checks for public cache statistics and image bytes remaining out of temporary transport files.
+
 ## [1.0.1] - 2026-11-02
 
 ### Changed
@@ -15,8 +24,8 @@
 
 ### Verification
 
-- Targeted deterministic tests and typechecking use Pi Web SDK 1.4.0 on Windows with Node 24.12.0. A real Claude Code 2.1.292 / Opus 5.5 xhigh first-response replay kept `on` mode and all 81 tools and selected codemode. Its launch settings confirmed telemetry was disabled. The full paid release matrix was not rerun; its compatibility baseline is unchanged.
-- Telemetry remains disabled through `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` and `telemetry@builtin=false`. Regression coverage checks that parent telemetry/exporter settings are not forwarded. No telemetry dependency or enable switch was added; optional local diagnostic logs remain.
+- Focused deterministic tests and typechecking cover Pi SDK 1.4.0; this is not a full migration or a new compatibility baseline.
+- CLI nonessential traffic and `telemetry@builtin` remain disabled. Optional diagnostic metrics are local.
 
 ## [1.0.0] - 2026-10-11
 
@@ -70,7 +79,7 @@ Windows maintenance fork of the archived upstream 0.6.0, for Claude Code 2.1.292
 
 ## [0.6.0] - 2026-09-27
 
-> **This project is mothballed after the release of v0.6.0.** Pi and Claude Code are both extremely fast-moving projects that publish breaking changes regularly, and this was a hobby project rather than a professional venture, so I have other plans for my time and my tokens. I encourage people to look for other providers, such as [pi-claude-bridge](https://github.com/elidickinson/pi-claude-bridge), which is built on the Agent SDK. Please do not report further issues or submit pull requests. If Pi and Claude Code stabilize in future months, I may revisit this project. I thank my users for their kind words and wish everyone good luck with their own efforts.
+> Historical note from the archived upstream README at the time of the 0.6.0 release; it does not describe the maintenance status of this repository.
 
 ### Added
 

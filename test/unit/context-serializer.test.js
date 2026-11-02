@@ -80,6 +80,10 @@ test("serializes Pi context, tools, literal at-paths, and images privately", asy
         if (needsBunConfig()) expected.push("bunfig.toml");
         // Images travel inline, so none is written to disk.
         assert.deepEqual(files, expected.sort());
+        const imageData = prepared.transcriptImages[3][0].source.data;
+        for (const file of files) {
+            assert.equal((await readFile(join(prepared.directory, file), "utf8")).includes(imageData), false);
+        }
     }
     finally {
         await rm(prepared.directory, { recursive: true, force: true });
