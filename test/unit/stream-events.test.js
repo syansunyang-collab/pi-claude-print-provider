@@ -311,7 +311,7 @@ test("maps an explicit Claude error result to one terminal error", async () => {
     assert.equal(output.stopReason, "error");
     assert.match(output.errorMessage ?? "", /429.*subscription limit reached/);
 });
-test("keeps assistant and loop diagnostics when the result text is empty", async () => {
+test("keeps loop diagnostics ahead of assistant echoes when the result text is empty", async () => {
     const stream = createAssistantMessageEventStream();
     const output = createOutput(model);
     const mapper = makeMapper(stream, output, new Set(), new Map(), () => { });
@@ -320,7 +320,7 @@ test("keeps assistant and loop diagnostics when the result text is empty", async
     mapper.accept({ type: "result", subtype: "success", is_error: true, api_error_status: 429, result: "", errors: ["loop detail"] });
     const result = await stream.result();
     assert.equal(result.stopReason, "error");
-    assert.match(result.errorMessage ?? "", /429.*You're out of usage credits/);
+    assert.match(result.errorMessage ?? "", /429.*loop detail/);
 });
 test("stages the exact captured Claude tool-handoff acknowledgement", async () => {
     const { stream, output, mapper } = readyToolMapper();
