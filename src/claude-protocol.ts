@@ -79,7 +79,7 @@ export function terminalResultErrorDetail(
   const terminal = typeof record.terminal_reason === "string" && record.terminal_reason.trim()
     ? record.terminal_reason.trim()
     : undefined;
-  return result ?? assistantDiagnostic ?? (errors || undefined) ?? terminal ?? rateLimitFailure ?? "unknown error";
+  return (errors || undefined) ?? result ?? terminal ?? rateLimitFailure ?? assistantDiagnostic ?? "unknown error";
 }
 
 // The API's rejection when a request carries more cache_control blocks than it

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Context, ImageContent, Tool } from "@earendil-works/pi-ai";
+import { claudeToolDescription } from "./claude-tool-guidance.ts";
 import { ClaudeCodeError } from "./errors.ts";
 import { NEUTRAL_BUN_CONFIG, needsBunConfig } from "./host-runtime.ts";
 import { createRuntimeDirectory } from "./runtime-directories.ts";
@@ -9,7 +10,7 @@ import type { InlineImage, PreparedRequest } from "./types.ts";
 
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 const MAX_TOTAL_IMAGE_BYTES = 100 * 1024 * 1024;
-const MAX_IMAGES = 20;
+const MAX_IMAGES = Number.POSITIVE_INFINITY;
 const MAX_TOOLS = 256;
 const MAX_CATALOG_BYTES = 2 * 1024 * 1024;
 const MAX_TRANSCRIPT_BYTES = 32 * 1024 * 1024;
@@ -100,7 +101,7 @@ function serializeToolCatalog(tools: Tool[], limits: RequestPreparationLimits): 
     names.set(transportName, tool.name);
     historicalNames.set(tool.name, transportName);
     publicMap.push({ transportName, piName: tool.name });
-    return { name: alias, description: tool.description, inputSchema: tool.parameters };
+    return { name: alias, description: claudeToolDescription(tool), inputSchema: tool.parameters };
   });
   return { catalog, names, historicalNames, publicMap };
 }

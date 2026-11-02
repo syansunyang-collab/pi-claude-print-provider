@@ -79,6 +79,30 @@ test("refuses to forward a denied variable through the caller's own additions", 
     assert.equal(env.CLAUDE_CODE_MAX_OUTPUT_TOKENS, "64000");
     assert.equal(env.PI_CLAUDE_TOOL_CATALOG, "/tmp/tools.json");
 });
+test("parent telemetry settings never enable telemetry in a Claude child", () => {
+    const parent = {
+        CLAUDE_CODE_ENABLE_TELEMETRY: "1",
+        CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "0",
+        OTEL_METRICS_EXPORTER: "otlp",
+        OTEL_LOGS_EXPORTER: "otlp",
+        OTEL_EXPORTER_OTLP_ENDPOINT: "http://127.0.0.1:4317",
+    };
+    const originals = Object.fromEntries(Object.keys(parent).map((name) => [name, process.env[name]]));
+    Object.assign(process.env, parent);
+    try {
+        const env = buildClaudeEnvironment();
+        assert.equal(env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC, "1");
+        for (const name of Object.keys(parent).filter((name) => name !== "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC")) {
+            assert.equal(env[name], undefined, name);
+        }
+    } finally {
+        for (const [name, value] of Object.entries(originals)) {
+            if (value === undefined) delete process.env[name];
+            else process.env[name] = value;
+        }
+    }
+});
+
 test("forwards a relocated Claude configuration and an extra CA bundle", () => {
     const forwarded = { CLAUDE_CONFIG_DIR: "/custom/claude-config", NODE_EXTRA_CA_CERTS: "/custom/corporate-ca.pem" };
     const originals = Object.fromEntries(Object.keys(forwarded).map((name) => [name, process.env[name]]));

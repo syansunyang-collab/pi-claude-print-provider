@@ -1,6 +1,6 @@
 {
   "name": "pi-claude-print-provider",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "module",
   "description": "Your own Claude subscription in Pi through the official, unmodified claude -p. Pi runs every tool. Continued from chem/pi-claude-code-provider.",
   "author": "Kai Mercer <syansunyang@gmail.com>",

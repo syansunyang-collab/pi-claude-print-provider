@@ -250,7 +250,7 @@ test("keeps active, colliding, removed, and paired historical tool identities co
         await Promise.all([first, second].map((item) => rm(item.directory, { recursive: true, force: true })));
     }
 });
-test("sends every image occurrence and enforces the image-count limit", async () => {
+test("sends every image occurrence and enforces an explicit image-count limit", async () => {
     const image = { type: "image", data: Buffer.from("same image").toString("base64"), mimeType: "image/png" };
     const prepared = await prepareRequest({ messages: [{ role: "user", content: [image, image], timestamp: 1 }] });
     try {
@@ -264,7 +264,10 @@ test("sends every image occurrence and enforces the image-count limit", async ()
     finally {
         await rm(prepared.directory, { recursive: true, force: true });
     }
-    await assert.rejects(prepareRequest({ messages: [{ role: "user", content: Array.from({ length: 21 }, () => image), timestamp: 1 }] }), /At most 20 images/);
+    await assert.rejects(
+        prepareRequestWithLimits({ messages: [{ role: "user", content: [image, image], timestamp: 1 }] }, { images: 1 }),
+        (error) => error.code === "image_count",
+    );
 });
 test("enforces every configurable serializer resource boundary", async () => {
     const schema = Type.Object({ value: Type.String() });
@@ -434,14 +437,26 @@ test("rejects a non-boolean redacted flag and a non-string image MIME type", asy
     );
 });
 
-test("counts historical images toward the 20-image limit", async () => {
-    await assert.rejects(prepareRequest({
+test("inlines more than 20 historical and current images by default, retaining explicit limits", async () => {
+    const context = {
         messages: [
             { role: "user", content: Array.from({ length: 21 }, (_, index) => pixels(`old ${index}`)), timestamp: 1 },
             assistantMessage([{ type: "text", text: "seen" }]),
             { role: "user", content: [pixels("current")], timestamp: 3 },
         ],
-    }), (error) => error.code === "image_count" && /At most 20 images/.test(error.message));
+    };
+    const prepared = await prepareRequest(context);
+    try {
+        assert.equal(prepared.imageCount, 22);
+        assert.equal(prepared.transcriptImages.flat().length, 22);
+        assert.deepEqual(sentNames(prepared), [
+            ...Array.from({ length: 21 }, (_, index) => imageName(`old ${index}`)),
+            imageName("current"),
+        ]);
+    } finally {
+        await rm(prepared.directory, { recursive: true, force: true });
+    }
+    await assert.rejects(prepareRequestWithLimits(context, { images: 21 }), (error) => error.code === "image_count");
 });
 
 test("prepares inline images under a temp root with spaces", { skip: process.platform === "win32" }, async () => {

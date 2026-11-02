@@ -859,6 +859,7 @@ test("serves Pi-AI API-registry calls, which an extension's own agent loop makes
     // agentLoop's default stream function resolve the model's api in Pi-AI's
     // registry, where a miss throws into an unawaited loop and exits Pi.
     const { directory, executable } = await createFakeClaude("side-request-ok");
+    const reloaded = await createFakeClaude("reloaded-side-request-ok");
     const original = process.env.PI_CLAUDE_CODE_PROVIDER_PATH;
     process.env.PI_CLAUDE_CODE_PROVIDER_PATH = executable;
     try {
@@ -873,27 +874,31 @@ test("serves Pi-AI API-registry calls, which an extension's own agent loop makes
             api: "pi-claude-code-provider-headless",
             baseUrl: "pi-claude-code-provider://local",
         };
-        // A second instance shares the registration rather than replacing it.
+        pi.handlers.get("session_start")[0]({}, sessionContext(tmpdir(), { notify() { } }));
+        const oldStream = getApiProvider(model.api).streamSimple;
+        // Reload must replace the old installation closure even with an existing API.
+        process.env.PI_CLAUDE_CODE_PROVIDER_PATH = reloaded.executable;
         const other = fakePi();
         await piClaudeCodeProvider(other.api);
-        pi.handlers.get("session_start")[0]({}, sessionContext(tmpdir(), { notify() { } }));
+        assert.notEqual(getApiProvider(model.api).streamSimple, oldStream);
 
         // A side request is an ordinary request: no session id of its own, no tools.
         const answer = await completeSimple(model, { messages: [{ role: "user", content: "ping", timestamp: 1 }] }, { reasoning: "medium" });
         assert.equal(answer.stopReason, "stop", answer.errorMessage);
-        assert.equal(answer.content.find((block) => block.type === "text")?.text, "side-request-ok");
+        assert.equal(answer.content.find((block) => block.type === "text")?.text, "reloaded-side-request-ok");
 
         // Another session's /reload clears the registry for every extension in
         // the process, so the next session start re-asserts ownership.
         resetApiProviders();
         assert.equal(getApiProvider("pi-claude-code-provider-headless"), undefined);
         other.handlers.get("session_start")[0]({}, sessionContext(tmpdir(), { notify() { } }));
-        assert.ok(getApiProvider("pi-claude-code-provider-headless"));
+        const currentStream = getApiProvider(model.api).streamSimple;
+        assert.ok(currentStream);
 
         // The instance that registered leaving must not strip the registration
         // the other one is still being served by.
         await pi.handlers.get("session_shutdown")[0]({}, {});
-        assert.ok(getApiProvider("pi-claude-code-provider-headless"));
+        assert.equal(getApiProvider(model.api).streamSimple, currentStream);
         await other.handlers.get("session_shutdown")[0]({}, {});
         assert.equal(getApiProvider("pi-claude-code-provider-headless"), undefined);
     }
@@ -901,7 +906,7 @@ test("serves Pi-AI API-registry calls, which an extension's own agent loop makes
         if (original === undefined) delete process.env.PI_CLAUDE_CODE_PROVIDER_PATH;
         else process.env.PI_CLAUDE_CODE_PROVIDER_PATH = original;
         unregisterApiProviders("pi-claude-code-provider");
-        await rm(directory, { recursive: true, force: true });
+        await Promise.all([directory, reloaded.directory].map((path) => rm(path, { recursive: true, force: true })));
     }
 });
 

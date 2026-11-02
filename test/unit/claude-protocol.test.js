@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { createAssistantMessageEventStream, isContextOverflow, isRetryableAssistantError } from "@earendil-works/pi-ai";
+import { normalizeClaudeOverflow } from "../../src/errors.ts";
+import { createOutput } from "../../src/output.ts";
+import { ClaudeEventMapper } from "../../src/stream-events.ts";
 import { recordKind, terminalResultErrorDetail, validateClaudeInitialization } from "../../src/claude-protocol.ts";
 
 const base = {
@@ -46,7 +50,30 @@ test("reports sanitized MCP initialization errors without private paths", () => 
 
 test("shares terminal result diagnostics across Claude protocol consumers", () => {
     assert.equal(terminalResultErrorDetail({ result: null, errors: ["first", "second"] }), "first; second");
-    assert.equal(terminalResultErrorDetail({ terminal_reason: "limit" }, "assistant detail"), "assistant detail");
+    assert.equal(terminalResultErrorDetail({ terminal_reason: "limit" }, "assistant detail"), "limit");
+    assert.equal(terminalResultErrorDetail({ errors: ["network request failed"], result: "partial reply" }, "ordinary echo"), "network request failed");
+    assert.equal(terminalResultErrorDetail({ errors: ["OAuth session expired"] }, "ordinary echo"), "OAuth session expired");
+    assert.equal(terminalResultErrorDetail({ result: "Prompt is too long" }, "ordinary echo", "rate limit exceeded"), "Prompt is too long");
+    assert.equal(terminalResultErrorDetail({}, "ordinary echo", "rate limit exceeded"), "rate limit exceeded");
+    assert.equal(terminalResultErrorDetail({ result: "actual result diagnostic" }, "ordinary echo"), "actual result diagnostic");
+    assert.equal(terminalResultErrorDetail({}, "assistant detail"), "assistant detail");
+    assert.equal(terminalResultErrorDetail({}), "unknown error");
+});
+
+test("terminal overflow outranks an assistant echo and rejected rate-limit event", () => {
+    const output = createOutput({ id: "fixture", api: "test", provider: "test" });
+    const mapper = new ClaudeEventMapper({
+        stream: createAssistantMessageEventStream(), output,
+        expectedTools: new Set(), toolNames: new Map(), onToolUse() {},
+    });
+    mapper.accept(base);
+    mapper.accept({ type: "rate_limit_event", rate_limit_info: { status: "rejected", rateLimitType: "five_hour", resetsAt: 1_800_000_000 } });
+    mapper.accept({ type: "assistant", message: { content: [{ type: "text", text: "ordinary partial reply" }] } });
+    mapper.accept({ type: "result", is_error: true, result: "Prompt is too long" });
+    assert.match(output.errorMessage, /Prompt is too long/);
+    const error = { ...output, stopReason: "error", errorMessage: normalizeClaudeOverflow(output.errorMessage) };
+    assert.equal(isContextOverflow(error), true);
+    assert.equal(isRetryableAssistantError(error), false);
 });
 
 test("names what an isolation failure found, bounded and without paths", () => {

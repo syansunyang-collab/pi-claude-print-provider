@@ -49,7 +49,7 @@ export default async function piClaudeCodeProvider(pi: ExtensionAPI): Promise<vo
   // Sessions are registered process-wide, not in this closure: Pi re-runs this
   // factory for every new, resumed, forked or cloned session, and a host can hold
   // several live sessions that share these instances. A request must resolve its
-  // own session's directory, image store and notifier, never the last to register,
+  // own session's directory and notifier, never the last to register,
   // because Pi's model runtime keeps only the newest provider.
   const sessions = sessionRegistry();
   let ownSessionId: string | undefined;
@@ -83,7 +83,7 @@ export default async function piClaudeCodeProvider(pi: ExtensionAPI): Promise<vo
   // loses only side requests from other extensions.
   const compat = await import("@earendil-works/pi-ai/compat").catch(() => undefined);
   const serveApiRegistry = (): void => {
-    if (!compat || compat.getApiProvider(API)) return;
+    if (!compat) return;
     compat.registerApiProvider({ api: API, stream: streamSimple, streamSimple }, PROVIDER);
   };
   serveApiRegistry();

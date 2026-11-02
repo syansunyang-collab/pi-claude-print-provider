@@ -124,10 +124,10 @@ Linux 和 macOS 还没有跑过付费阶段。
 ### 安装
 
 ```bash
-pi install git:github.com/syansunyang-collab/pi-claude-print-provider@v1.0.0
+pi install git:github.com/syansunyang-collab/pi-claude-print-provider@v1.0.1
 ```
 
-上面的命令固定在 `v1.0.0` 标签；去掉 `@v1.0.0` 则跟随默认分支。加 `-l` 可以只装到当前项目。
+上面的命令固定在 `v1.0.1` 标签；去掉 `@v1.0.1` 则跟随默认分支。加 `-l` 可以只装到当前项目。
 
 如果之前装过上游的 npm 版，先执行 `pi remove npm:pi-claude-code-provider`。
 
@@ -164,6 +164,10 @@ Windows 上如果 `claude` 是 npm 生成的 `.cmd` 包装脚本，插件无法�
 为了兼容已有的会话和配置，provider ID（`pi-claude-code-provider`）、doctor 命令和 `PI_CLAUDE_CODE_PROVIDER_*` 环境变量都沿用上游的名字，没有改。
 
 ## 我们的改动（相对上游 0.6.0）
+
+- **Claude 的 codemode 入口引导。** 工具目录中对齐 JSON `code` 参数说明，并加入批量读取/命令的场景与范例。复用 Pi 的 codemode 与只提议的工具桥，不强制切换 `only` 模式，也不隐藏其他工具。
+- **图片数量默认不设限。** 仍内联发送有效上下文中的每张图片；单图 20 MiB、图片合计 100 MiB、转录 32 MiB 的字节上限不变。Claude Code 或服务端仍可能拒绝过多图片。
+- **运行修正。** Windows 二次终止后确认退出即完成清理；错误结果优先于普通助手回显；重载后刷新 compat stream，避免沿用旧 CLI 实例。
 
 - **适配新版 Claude Code。** 这个版本在 print 模式下会加载内置的 `plugin-authoring` 插件，导致每个请求都过不了隔离检查。现在它和 `agents-md`、`telemetry` 一起在 `--settings` 里被关掉。已验证基线见 [兼容基线](DEVELOPING.md#compatibility-baseline)；最低支持版本仍是 Pi 0.86.1、Claude Code 2.1.281。
 - **图片内联。** 图片以 base64 块经 stdin 发送，不再用 `@"路径"` 引用文件。
@@ -316,10 +320,10 @@ Paid stages have not been run on Linux or macOS.
 ### Install
 
 ```bash
-pi install git:github.com/syansunyang-collab/pi-claude-print-provider@v1.0.0
+pi install git:github.com/syansunyang-collab/pi-claude-print-provider@v1.0.1
 ```
 
-The command above pins the `v1.0.0` tag; drop `@v1.0.0` to follow the default branch. Add `-l` for a project-local install.
+The command above pins the `v1.0.1` tag; drop `@v1.0.1` to follow the default branch. Add `-l` for a project-local install.
 
 If you installed the upstream npm package, remove it first with `pi remove npm:pi-claude-code-provider`.
 
@@ -356,6 +360,10 @@ The full list of variables, timeouts, and troubleshooting is in [DESIGN.md](DESI
 For compatibility with existing sessions and settings, the provider ID (`pi-claude-code-provider`), the doctor command, and the `PI_CLAUDE_CODE_PROVIDER_*` variables keep their upstream names.
 
 ## What's different from upstream 0.6.0
+
+- **Claude-facing codemode guidance.** The tool catalog aligns the JSON `code` input description and adds a batching scenario and example. It reuses Pi's codemode and proposal-only bridge, without forcing `only` mode or hiding other tools.
+- **No default image-count cap.** Every image in the effective context still travels inline. The 20 MiB per-image, 100 MiB aggregate-image, and 32 MiB transcript byte bounds remain; Claude Code or the service may still reject too many images.
+- **Runtime fixes.** Windows cleanup accepts confirmed exit after the second termination wait; terminal errors outrank ordinary assistant echoes; reload refreshes the compat stream rather than retaining an old CLI instance.
 
 - **Support for the current Claude Code.** The verified release loads its built-in `plugin-authoring` plugin in print mode, which made every request fail the isolation check. It is now disabled in `--settings` along with `agents-md` and `telemetry`. Verified baseline: see the [compatibility baseline](DEVELOPING.md#compatibility-baseline). The minimum stays Pi 0.86.1, Claude Code 2.1.281.
 - **Inline images.** Images go on stdin as base64 blocks instead of `@"path"` file references.

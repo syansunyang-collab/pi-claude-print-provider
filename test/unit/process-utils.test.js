@@ -1,10 +1,52 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
+import { readFile } from "node:fs/promises";
+import { stripTypeScriptTypes } from "node:module";
+import vm from "node:vm";
 import test from "node:test";
 import { withTimeout, waitFor } from "../support/wait.js";
 import { ProcessTerminationError, forceTerminateProcessTreeSync, superviseProcess, taskkillFailureNamesOnlyExitedProcesses, terminateProcessGroup } from "../../src/process-utils.ts";
 import { nodeFixtureArgs } from "../support/node-fixture.js";
+
+test("Windows cleanup accepts exit after either wait and rejects unconfirmed death", async () => {
+    // Exercise the private Windows branch without taskkill touching real PIDs,
+    // including on POSIX CI. Use the production body, not a copied algorithm.
+    const source = await readFile(new URL("../../src/process-utils.ts", import.meta.url), "utf8");
+    const start = source.indexOf("async function terminateWindowsProcessTree(");
+    const end = source.indexOf("\nasync function runTaskkill(", start);
+    assert.ok(start >= 0 && end > start);
+    const body = stripTypeScriptTypes(source.slice(start, end));
+    for (const scenario of ["first", "exitCode", "signalCode", "stuck", "taskkillFailure"]) {
+        let waits = 0;
+        const signals = [];
+        const child = { exitCode: null, signalCode: null, kill(signal) { signals.push(signal); return true; } };
+        const terminate = vm.runInNewContext(body + "\nterminateWindowsProcessTree", {
+            validPid: () => true,
+            windowsTaskkillExecutable: () => "fake-taskkill",
+            runTaskkill: async () => {
+                if (scenario === "taskkillFailure") throw new Error("access denied");
+            },
+            waitForChildClose: async () => {
+                waits++;
+                if (scenario === "first" || (scenario === "exitCode" && waits === 2)) child.exitCode = 0;
+                if (scenario === "signalCode" && waits === 2) child.signalCode = "SIGKILL";
+            },
+            isTaskkillMissingProcess: () => false,
+            taskkillFailureNamesOnlyExitedProcesses: () => false,
+            errorMessage: (error) => error.message,
+        });
+        if (scenario === "stuck") {
+            await assert.rejects(terminate(child, 12345, 500), /did not terminate.*exitCode null, signal null/);
+        } else if (scenario === "taskkillFailure") {
+            await assert.rejects(terminate(child, 12345, 500), /cleanup failed.*access denied/);
+        } else {
+            await terminate(child, 12345, 500);
+            assert.ok(child.exitCode !== null || child.signalCode !== null);
+        }
+        assert.deepEqual(signals, scenario === "first" ? [] : ["SIGKILL"]);
+    }
+});
 
 async function assertProcessGone(pid) {
     await waitFor(() => {

@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.0.1] - 2026-11-02
+
+### Changed
+
+- Images no longer have a default count cap. Explicit serializer count limits, supported media types, inline transport, per-image and aggregate byte limits remain. Claude Code and service-side limits still apply.
+- The Claude-facing codemode catalog description now matches the JSON `code` argument and includes the batching scenario and example validated in a controlled first-response replay. Pi's original tool declarations, schemas, other tools, and proposal-only bridge are unchanged; this does not force `only` mode.
+
+### Fixed
+
+- Windows process cleanup accepts confirmed exit after the SIGKILL fallback wait instead of incorrectly retaining private state as if the child were alive.
+- Terminal errors, result diagnostics, terminal reasons, and rejected rate-limit diagnostics take precedence over an ordinary assistant echo.
+- Extension reload refreshes the Pi-AI compat stream even when the API is already registered, so new requests use the current CLI installation closure.
+
+### Verification
+
+- Targeted deterministic tests and typechecking use Pi Web SDK 1.4.0 on Windows with Node 24.12.0. A real Claude Code 2.1.292 / Opus 5.5 xhigh first-response replay kept `on` mode and all 81 tools and selected codemode. Its launch settings confirmed telemetry was disabled. The full paid release matrix was not rerun; its compatibility baseline is unchanged.
+- Telemetry remains disabled through `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` and `telemetry@builtin=false`. Regression coverage checks that parent telemetry/exporter settings are not forwarded. No telemetry dependency or enable switch was added; optional local diagnostic logs remain.
+
 ## [1.0.0] - 2026-10-11
 
 First independent release, continued from [chem/pi-claude-code-provider](https://github.com/chem/pi-claude-code-provider) 0.6.0, which chem archived on 2026-09-27. Thanks to chem for the original work; their MIT copyright notice is kept in LICENSE.

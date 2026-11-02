@@ -26,7 +26,7 @@ pi install /absolute/path/to/pi-claude-code-provider
 | --- | --- | --- |
 | Extension startup, session lifetime, and session working directory | `index.ts` (manifest entry and implementation), `src/session-registry.ts` | `extension.test.js`, `packaging.test.js`, `session-registry.test.js` |
 | Authentication, CLI, model catalog, and compatibility | `src/auth.ts`, `src/catalog.ts`, `src/claude-args.ts`, `src/compatibility.ts` | `auth.test.js`, `catalog.test.js`, `claude-args.test.js`, `compatibility.test.js` |
-| Transcript and provider lifecycle | `src/context-serializer.ts`, `src/provider.ts`, `src/stream-events.ts`, `src/claude-protocol.ts`, `src/jsonl.ts`, `src/output.ts`, `src/errors.ts`, `src/types.ts` | `context-serializer.test.js`, `provider.test.js`, `stream-events.test.js`, `claude-protocol.test.js`, `jsonl.test.js`, `errors.test.js` |
+| Transcript and provider lifecycle | `src/context-serializer.ts`, `src/claude-tool-guidance.ts`, `src/provider.ts`, `src/stream-events.ts`, `src/claude-protocol.ts`, `src/jsonl.ts`, `src/output.ts`, `src/errors.ts`, `src/types.ts` | `context-serializer.test.js`, `claude-tool-guidance.test.js`, `provider.test.js`, `stream-events.test.js`, `claude-protocol.test.js`, `jsonl.test.js`, `errors.test.js` |
 | Runtime launch, process trees, and private state | `src/claude-process.ts`, `src/host-runtime.ts`, `src/process-utils.ts`, `src/runtime-directories.ts` | `process-utils.test.js`, `runtime-directories.test.js`, `exit-cleanup.test.js` |
 | Visible web search | `src/web-search.ts` | `web-search.test.js` |
 | Diagnostics and metrics | `src/diagnostics.ts`, `src/doctor.ts`, `src/metrics.ts`, `src/claude-models.ts` | `metrics-doctor.test.js`, `claude-models.test.js` |
@@ -61,6 +61,17 @@ Two contracts are easy to break silently:
 Pi gives custom providers a normalized `TranscriptContext`: system messages carry the prompt, sections, and tool additions/removals. The public `Context` shorthand, top-level `systemPrompt` and `tools`, is folded into those messages by Pi-AI's `normalizeContext()` before any provider is reached, and `TranscriptContext` is brand-typed so a raw `Context` cannot arrive by accident. `src/provider.ts` uses the host Pi-AI replay helpers to recover the current prompt and tools, then removes system messages from the conversation sent to the existing serializer. An empty recovery collapses to `undefined` rather than `""` or `[]`, so the logical payload keeps its "absent" shape. The recovered prompt is used for cwd routing **before** `before_provider_request`; that hook still receives the package's logical top-level payload.
 
 Provider-facing tests must build their fixtures through `normalizeContext()` for the same reason. A hand-built pre-normalization context still runs, but its `systemPrompt` and `tools` land where the provider never reads them, so the test passes while measuring nothing.
+
+The Claude-facing codemode description is adapted only by `src/claude-tool-guidance.ts` when the serializer writes the final tool catalog. Keep Pi's replayed declarations and JSON schemas unchanged. The example uses Pi script names (`tools.read`, `tools.bash`), not MCP transport names; no separate runner or `only` policy is installed. Images have no default count cap; explicit test-seam count limits and all byte bounds still apply.
+
+For a quota-free focused check, select the intended SDK with `PI_CLAUDE_CODE_PROVIDER_DEV_PI` pointing to its actual CLI entry, then run:
+
+```bash
+node --import ./test/support/register-pi-loader.js --test test/unit/claude-tool-guidance.test.js test/unit/context-serializer.test.js test/unit/claude-protocol.test.js test/unit/auth.test.js test/unit/claude-args.test.js
+npm run typecheck
+```
+
+These deterministic checks do not advance the paid compatibility baseline or replace release validation.
 
 Inspect the matching Pi provider types, replay helpers, agent-loop call path, and side-Agent callers on any later contract change.
 

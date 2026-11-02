@@ -389,7 +389,11 @@ async function terminateWindowsProcessTree(child: ChildProcess, pid: number, gra
   if (child.exitCode === null && child.signalCode === null) {
     child.kill("SIGKILL");
     await waitForChildClose(child, graceMs);
-    throw new Error(`Process tree ${pid} did not terminate after taskkill`);
+    if (child.exitCode !== null || child.signalCode !== null) return;
+    throw new Error(
+      `Process tree ${pid} did not terminate after taskkill and SIGKILL ` +
+      `(exitCode ${String(child.exitCode)}, signal ${String(child.signalCode)})`,
+    );
   }
 }
 
