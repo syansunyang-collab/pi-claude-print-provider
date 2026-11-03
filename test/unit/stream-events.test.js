@@ -1,16 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-    AssistantMessageFrameEncoder,
     createAssistantMessageEventStream,
     isContextOverflow,
     isRecoverableLength,
     isRetryableAssistantError,
-    reduceAssistantMessageFrames,
 } from "@earendil-works/pi-ai";
-import { ClaudeEventMapper as EventMapper, argumentPreviewDue } from "../../src/stream-events.ts";
 import { createOutput } from "../../src/output.ts";
-import { PROVIDER_INIT_FIELDS, initRecord as claudeInitRecord, streamRecoveryRecords, toolUseEvents } from "../support/claude-fixture.js";
+import { argumentPreviewDue, ClaudeEventMapper as EventMapper } from "../../src/stream-events.ts";
+import { initRecord as claudeInitRecord, PROVIDER_INIT_FIELDS, streamRecoveryRecords, toolUseEvents } from "../support/claude-fixture.js";
 
 function makeMapper(stream, output, expectedTools, toolNames, onToolUse, onRateLimitNotice, onResponseAnnouncement) {
     return new EventMapper({ stream, output, expectedTools, toolNames, onToolUse, onRateLimitNotice, onResponseAnnouncement });
@@ -757,17 +755,10 @@ async function replayCapture(scenario) {
     const stream = createAssistantMessageEventStream();
     const output = createOutput(model);
     const events = [];
-    // `partial` is a shared live accumulator, so encoding each event as it arrives and
-    // encoding the whole stream afterwards are genuinely different inputs to Pi's
-    // encoder. Both orders must produce frames its reducer accepts.
-    const liveEncoder = new AssistantMessageFrameEncoder();
-    const liveFrames = [];
     const consume = (async () => {
         for await (const event of stream) {
-            const frame = liveEncoder.encode(event);
-            if (frame)
-                liveFrames.push(frame);
-            events.push(event);
+            // Preserve what a consumer saw, not the later state of shared `partial`.
+            events.push(structuredClone(event));
         }
     })();
     let handoff;
@@ -805,7 +796,7 @@ async function replayCapture(scenario) {
     }
     const message = await stream.result();
     await consume;
-    return { message, output, events, liveFrames, rejected, mapper };
+    return { message, output, events, rejected, mapper };
 }
 
 // Every recovery Claude Code performs after a response starts streaming. The first
@@ -1016,52 +1007,29 @@ test("accepts the output-limit handoff acknowledgement and fails closed on near 
         assert.equal((await stream.result()).stopReason, "error", entry.name);
     }
 });
-test("replays every captured scenario through Pi's own frame encoder and reducer", async () => {
-    // Pi's assistant events are append-only. Rewriting published content to reuse a
-    // recovered stream, as the rejected external fix did, makes these throw.
+test("captured scenarios publish one terminal event matching Pi's public stream result", async () => {
     for (const [scenario] of [...INTERRUPTED, ...REFUSED, ["http529"], ["post-stop"], ["tool-ok"], ["max-tokens"], ["context-window-exceeded"], ["prompt-too-long"]]) {
-        const { events, liveFrames } = await replayCapture(scenario);
-        assert.equal(liveFrames.length > 0, true, `${scenario} produced no frames`);
-        assert.doesNotThrow(() => reduceAssistantMessageFrames(liveFrames), `${scenario} (live)`);
-        const queuedEncoder = new AssistantMessageFrameEncoder();
-        const queuedFrames = [];
-        assert.doesNotThrow(() => {
-            for (const event of events) {
-                const frame = queuedEncoder.encode(event);
-                if (frame)
-                    queuedFrames.push(frame);
-            }
-        }, `${scenario} (queued encode)`);
-        assert.doesNotThrow(() => reduceAssistantMessageFrames(queuedFrames), `${scenario} (queued)`);
+        const { message, events } = await replayCapture(scenario);
+        const terminal = events.filter((event) => event.type === "done" || event.type === "error");
+        assert.equal(terminal.length, 1, `${scenario} has one terminal event`);
+        assert.deepEqual(terminal[0].type === "done" ? terminal[0].message : terminal[0].error, message, scenario);
     }
 });
-test("a failure before the response starts still reduces through Pi's frames", async () => {
-    // A setup failure -- a rejected initialization, an aborted request -- publishes
-    // error and end with no preceding start. Every replay above begins with a
-    // validated init, so this is the one shape they do not cover, and the
-    // provider's own pre-mapper failure path emits it too.
+test("a failure before the response starts reaches both Pi stream consumers", async () => {
     const stream = createAssistantMessageEventStream();
     const output = createOutput(model);
-    const encoder = new AssistantMessageFrameEncoder();
-    const frames = [];
+    const events = [];
     const consume = (async () => {
-        for await (const event of stream) {
-            const frame = encoder.encode(event);
-            if (frame)
-                frames.push(frame);
-        }
+        for await (const event of stream) events.push(structuredClone(event));
     })();
     const mapper = makeMapper(stream, output, new Set(), new Map(), () => { });
     mapper.fail("Claude Code initialized with an unexpected tool set");
     await consume;
-    // Pi's encoder currently frames nothing for a bare error, and reducing an
-    // empty set is the guarantee that matters either way: neither half throws.
-    assert.doesNotThrow(() => reduceAssistantMessageFrames(frames));
-    // The failure reaches the consumer through the stream's own result, which is
-    // the path the provider's pre-mapper failures rely on.
     const result = await stream.result();
     assert.equal(result.stopReason, "error");
     assert.match(result.errorMessage, /unexpected tool set/);
+    assert.deepEqual(events.map((event) => event.type), ["error"]);
+    assert.deepEqual(events[0].error, result);
 });
 
 test("classifies api_retry categories that repeating the turn cannot clear", async () => {

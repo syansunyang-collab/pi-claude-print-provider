@@ -73,6 +73,8 @@ npm run typecheck
 
 These deterministic checks do not advance the paid compatibility baseline or replace release validation.
 
+CI also runs `stream-events.test.js` against Pi 1.5.0 on Windows, separately from the verified-baseline release checks. Captured recovery scenarios use Pi's public event stream and compare each terminal event with `stream.result()`; they do not import removed SDK-internal frame encoders. This current-SDK check consumes no model quota and does not change `VERIFIED_VERSIONS`.
+
 Inspect the matching Pi provider types, replay helpers, agent-loop call path, and side-Agent callers on any later contract change.
 
 Pi's distribution is part of the baseline: the npm build runs on Node, the standalone tar.gz build is a compiled Bun binary, and `process.execPath` means something different on each. `scriptLaunch` in `src/host-runtime.ts` owns that difference. It sets `BUN_BE_BUN=1` so a compiled Pi runs the proposal bridge instead of its own entry point, and pins `--config=` to a neutral `bunfig.toml` in the private request directory: Pi's `--no-compile-autoload-bunfig` does not survive `BUN_BE_BUN`, so a `bunfig.toml` in the bridge's working directory would otherwise preload code into it. Keep the joined `--config=` form, because Bun ignores a space-separated one and then consumes the script path. The mechanism is part of the embedded Bun runtime on every standalone target. Record a standalone baseline only after `npm run test:paid:bridge-standalone` passes against that exact build.
