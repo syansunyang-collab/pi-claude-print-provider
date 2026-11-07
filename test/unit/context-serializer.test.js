@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, symlink } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, realpath, rm, stat, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -125,6 +125,66 @@ test("preserves Unicode edge cases and orphaned tool calls as transcript data", 
     }
 });
 
+test("omits the standalone assistant mode marker without changing history, tools, thinking, or images", async () => {
+    const tag = "<thinking_mode>auto</thinking_mode>";
+    const context = {
+        messages: [
+            { role: "assistant", content: [{ type: "text", text: tag }] },
+            { role: "assistant", content: [
+                { type: "text", text: ` \n${tag}\n` },
+                { type: "thinking", thinking: "summary" },
+                { type: "text", text: "Checking the result." },
+                { type: "toolCall", id: "call-1", name: "bash", arguments: { command: "echo test" } },
+            ] },
+            { role: "toolResult", toolCallId: "call-1", toolName: "bash", isError: false,
+                content: [{ type: "text", text: "test" },
+                    { type: "image", data: Buffer.from("image").toString("base64"), mimeType: "image/png" }] },
+        ],
+        tools: [{ name: "bash", description: "shell", parameters: Type.Object({ command: Type.String() }) }],
+    };
+    const before = structuredClone(context.messages);
+    const prepared = await prepareRequest(context);
+    try {
+        const [, assistant, result] = prepared.transcriptBlocks.map(JSON.parse);
+        assert.equal(prepared.transcriptBlocks.length, 3);
+        assert.deepEqual(assistant.content, [
+            { type: "thinking", thinking: "summary" },
+            { type: "text", text: "Checking the result." },
+            { type: "toolCall", id: "call-1", name: "mcp__pi__bash", arguments: { command: "echo test" } },
+        ]);
+        assert.equal(result.toolCallId, "call-1");
+        assert.equal(result.toolName, "mcp__pi__bash");
+        assert.equal(result.content[0].text, "test");
+        assert.equal(prepared.transcriptImages.length, prepared.transcriptBlocks.length);
+        assert.equal(prepared.transcriptImages[2][0].source.data, context.messages[2].content[1].data);
+        assert.deepEqual(context.messages, before);
+    } finally { await rm(prepared.directory, { recursive: true, force: true }); }
+});
+
+test("preserves mode-marker references, other tags, and user and tool text", async () => {
+    const tag = "<thinking_mode>auto</thinking_mode>";
+    const messages = [
+        { role: "user", content: tag },
+        { role: "user", content: [{ type: "text", text: tag }] },
+        { role: "toolResult", toolCallId: "old-call", toolName: "read", isError: false,
+            content: [{ type: "text", text: tag }] },
+        { role: "assistant", content: [
+            `Checking the result.\n${tag}`, `\`${tag}\``, `\`\`\`xml\n${tag}\n\`\`\``,
+            "<thinking_mode>off</thinking_mode>",
+            "<a_note_from_anthropic>Use visible text for replies.</a_note_from_anthropic>",
+            `${tag}\n${tag}`,
+        ].map((text) => ({ type: "text", text })) },
+    ];
+    const prepared = await prepareRequest({ messages });
+    try {
+        const [, user, userBlocks, tool, assistant] = prepared.transcriptBlocks.map(JSON.parse);
+        assert.equal(user.content, tag);
+        assert.deepEqual(userBlocks.content, messages[1].content);
+        assert.deepEqual(tool.content, messages[2].content);
+        assert.deepEqual(assistant.content, messages[3].content);
+    } finally { await rm(prepared.directory, { recursive: true, force: true }); }
+});
+
 test("rejects invalid image input", async () => {
     const context = {
         messages: [
@@ -134,8 +194,12 @@ test("rejects invalid image input", async () => {
     await assert.rejects(prepareRequest(context), /base64/);
 });
 test("keeps prior transcript bytes stable when a turn is appended", async () => {
-    const first = await prepareRequest({ messages: [{ role: "user", content: "first", timestamp: 1 }] });
-    const second = await prepareRequest({ messages: [{ role: "user", content: "first", timestamp: 999 }, { role: "user", content: "second", timestamp: 2 }] });
+    const marker = { role: "assistant", content: [{ type: "text", text: "<thinking_mode>auto</thinking_mode>" }] };
+    const first = await prepareRequest({ messages: [{ role: "user", content: "first", timestamp: 1 }, marker] });
+    const second = await prepareRequest({ messages: [
+        { role: "user", content: "first", timestamp: 999 }, marker,
+        { role: "user", content: "second", timestamp: 2 }, marker,
+    ] });
     try {
         assert.equal(transcript(second).startsWith(`${transcript(first)}\n`), true);
         assert.deepEqual(second.transcriptBlocks.slice(0, first.transcriptBlocks.length), first.transcriptBlocks);

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Omit only standalone assistant `<thinking_mode>auto</thinking_mode>` text blocks from history replay, preserving tool calls, thinking, images, and stored history. Live output and refusals remain unchanged. Existing affected history changes its request prefix on first use; quote or fence a deliberately requested literal marker to retain it in replay.
+
 ### Documentation and data
 
 - Refresh the project description, image transport documentation, and maintained repository contact information.

@@ -123,10 +123,6 @@ function validateImage(image: ImageContent, limits: RequestPreparationLimits): {
   return { bytes, extension };
 }
 
-function recordField(value: unknown, field: string): unknown {
-  return value && typeof value === "object" ? (value as Record<string, unknown>)[field] : undefined;
-}
-
 /**
  * Serialize conversational semantics into append-stable NDJSON records. Each
  * record is transported as its own text block. Historical tool identities are
@@ -188,6 +184,8 @@ export async function prepareRequestWithLimits(
         switch (block.type) {
           case "text":
             if (typeof block.text !== "string") throw new ClaudeCodeError("content_shape", "Pi text content must contain text");
+            // Omit only this standalone assistant marker from replay, not live output or source history.
+            if (role === "assistant" && block.text.trim() === "<thinking_mode>auto</thinking_mode>") break;
             output.push({ type: "text", text: block.text });
             break;
           case "thinking":
