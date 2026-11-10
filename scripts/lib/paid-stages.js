@@ -28,15 +28,34 @@ export const PAID_STAGES = {
   cache: { label: "cache", cap: 3, script: "live-test.js", args: ["--cache"] },
   // Haiku receives Claude Code's environment block ahead of the transcript, so a
   // directory that varies per request breaks its reuse while Sonnet still passes.
-  "cache-haiku": { label: "Haiku cache", cap: 3, script: "live-test.js", args: ["--cache", "--cache-model", "claude-haiku-4-5"] },
+  "cache-haiku": { label: "Haiku cache", cap: 3, script: "live-test.js", args: ["--cache", "--cache-model", "claude-haiku-5-5:low"] },
   "cache-images": { label: "Sonnet image cache", cap: 3, script: "live-test.js", args: ["--cache-images", "--cache-model", "claude-sonnet-5-5:low"] },
-  "cache-images-haiku": { label: "Haiku image cache", cap: 3, script: "live-test.js", args: ["--cache-images", "--cache-model", "claude-haiku-4-5"] },
+  "cache-images-haiku": { label: "Haiku image cache", cap: 3, script: "live-test.js", args: ["--cache-images", "--cache-model", "claude-haiku-5-5:low"] },
   // Fable availability and included quota vary by subscription tier, so its
   // one-launch case is opt-in and excluded from the blocking gate.
-  fable: { label: "fable model", cap: 1, script: "model-matrix.js", args: ["--case", "claude-fable-5-1:medium"] },
+  fable: { label: "fable model", cap: 1, script: "model-matrix.js", args: ["--case", "claude-fable-5-2:medium"] },
   opus: { label: "opus model", cap: 1, script: "model-matrix.js", args: ["--case", "claude-opus-5-5:medium"] },
   matrix: { label: "model matrix", cap: 11, script: "model-matrix.js", args: [] },
 };
+
+/** Keep the paid core on the latest daily-driver families; legacy and Fable cases stay opt-in. */
+export function modelMatrixCases(models) {
+  const first = (family) => models.find((model) => model.id.split("-")[1] === family);
+  const daily = ["sonnet", "opus"].map(first);
+  const haiku = first("haiku");
+  const core = [
+    ...daily.flatMap((model) => ["low", "medium", "high", "xhigh", "max"]
+      .filter((effort) => model.thinkingLevelMap?.[effort] !== null)
+      .map((effort) => ({ model: model.id, effort }))),
+    { model: haiku.id, effort: haiku.reasoning ? "medium" : "off" },
+  ];
+  const primary = new Set([...daily, haiku].map((model) => model.id));
+  return {
+    core,
+    selectable: [...core, ...models.filter((model) => !primary.has(model.id))
+      .map((model) => ({ model: model.id, effort: model.reasoning ? "medium" : "off" }))],
+  };
+}
 
 export const RELEASE_ORDER = ["full", "cache", "cache-haiku", "cache-images", "cache-images-haiku", "bridge", "bridge-standalone", "matrix"];
 

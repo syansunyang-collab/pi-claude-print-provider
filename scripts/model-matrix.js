@@ -7,6 +7,7 @@ import { EXPECTED_MODEL_FAMILIES } from "../src/compatibility.ts";
 import { providerModels as catalogModels } from "../src/catalog.ts";
 import { assistantReply, consumeJsonl, describeThinking, superviseLiveProcess } from "./lib/live-process.js";
 import { livePiLaunch } from "./lib/pi-installation.js";
+import { modelMatrixCases } from "./lib/paid-stages.js";
 
 if (process.env.PI_CLAUDE_CODE_PROVIDER_PAID_TEST_CHILD !== "1") {
     throw new Error("The paid model matrix must be started through an npm test:paid:* script");
@@ -14,30 +15,13 @@ if (process.env.PI_CLAUDE_CODE_PROVIDER_PAID_TEST_CHILD !== "1") {
 
 const packageRoot = process.cwd();
 const providerModels = catalogModels();
-const efforts = ["low", "medium", "high", "xhigh", "max"];
+
 const advertisedModels = providerModels.map((model) => model.id);
 // The picker offers full ids (claude-sonnet-5-5); compatibility targets are keyed by alias.
 const aliasOf = (id) => id.split("-")[1];
-const idOf = (alias) => advertisedModels.find((id) => aliasOf(id) === alias);
-assert.deepEqual(Object.keys(EXPECTED_MODEL_FAMILIES), advertisedModels.map(aliasOf), "compatibility targets must match advertised models");
-const effortModels = ["sonnet", "opus"].map(idOf);
-// Fable availability and included quota vary by subscription tier. It is
-// intentionally opt-in and excluded from the blocking gate; the standalone
-// case remains selectable for accounts with Fable access.
-const ungatedModels = new Set([idOf("fable")]);
-// A model without effort control runs once at "off" and sends Claude Code no effort.
-const noEffortModels = providerModels.filter((model) => !model.reasoning).map((model) => model.id);
-const mediumOnlyModels = advertisedModels.filter((model) => !effortModels.includes(model) && !noEffortModels.includes(model));
-const coreCases = [
-    { model: idOf("sonnet"), effort: "medium" },
-    ...effortModels.flatMap((model) => efforts.map((effort) => ({ model, effort }))).filter(({ model, effort }) => model !== idOf("sonnet") || effort !== "medium"),
-    ...noEffortModels.map((model) => ({ model, effort: "off" })),
-    ...mediumOnlyModels.filter((model) => !ungatedModels.has(model)).map((model) => ({ model, effort: "medium" })),
-];
-const selectableCases = [
-    ...coreCases,
-    ...mediumOnlyModels.filter((model) => ungatedModels.has(model)).map((model) => ({ model, effort: "medium" })),
-];
+assert.deepEqual(Object.keys(EXPECTED_MODEL_FAMILIES).sort(), [...new Set(advertisedModels.map(aliasOf))].sort(), "compatibility targets must match advertised model families");
+// Expanding the picker must not silently expand the paid gate or include Fable.
+const { core: coreCases, selectable: selectableCases } = modelMatrixCases(providerModels);
 const CASE_TIMEOUT_MS = 4 * 60_000;
 const selectedCase = process.argv[2] === "--case" ? process.argv[3] : undefined;
 if ((process.argv.length > 2 && (!selectedCase || process.argv.length !== 4)) || (selectedCase && !selectableCases.some(({ model, effort }) => `${model}:${effort}` === selectedCase))) {

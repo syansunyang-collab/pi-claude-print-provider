@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { MINIMUM_TOOL_BEARING_CAP, PAID_STAGES, PINNED_STAGE_SETTINGS, RELEASE_ORDER, releaseCap, stageEnvironment } from "../../scripts/lib/paid-stages.js";
+import { MINIMUM_TOOL_BEARING_CAP, PAID_STAGES, PINNED_STAGE_SETTINGS, RELEASE_ORDER, releaseCap, stageEnvironment, modelMatrixCases } from "../../scripts/lib/paid-stages.js";
 import { WEB_SEARCH_ENV, webSearchSetting } from "../../src/web-search.ts";
 import { providerModels } from "../../src/catalog.ts";
 
@@ -64,6 +64,14 @@ test("every model a paid stage selects is one the picker offers", () => {
             assert.ok(offered.has(model), `${name} selects ${model}, which the picker does not offer`);
         }
     }
+});
+
+test("the expanded picker keeps the paid core within its cap and all Fable versions opt-in", () => {
+    const { core, selectable } = modelMatrixCases(providerModels());
+    assert.equal(core.length, PAID_STAGES.matrix.cap);
+    assert.ok(core.every(({ model }) => !model.startsWith("claude-fable-")));
+    assert.ok(core.some(({ model, effort }) => model === "claude-haiku-5-5" && effort === "medium"));
+    for (const model of providerModels()) assert.ok(selectable.some((entry) => entry.model === model.id), model.id);
 });
 
 test("stage values override ambient values", () => {
