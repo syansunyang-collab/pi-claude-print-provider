@@ -39,7 +39,16 @@ pi install git:github.com/syansunyang-collab/pi-claude-print-provider@v1.0.1
 pi --model pi-claude-code-provider/claude-sonnet-5-5
 ```
 
-可选型号：`claude-sonnet-5-5`、`claude-fable-5-2`、`claude-fable-5-1`、`claude-opus-5-5`、`claude-haiku-4-5`。Fable 5.2 支持 1M 上下文和 128K 最大输出；5.1 保留供已有会话使用。使用资格和额外用量取决于登录 CLI 的账号。Windows 需要原生、可直接运行的 `claude.exe`，不能使用 npm 的 `.cmd` 包装脚本；必要时用 `PI_CLAUDE_CODE_PROVIDER_PATH` 指定路径。
+可选 11 个型号：
+
+- Opus：`claude-opus-5-5`、`claude-opus-5`、`claude-opus-4-8`、`claude-opus-4-7`、`claude-opus-4-6`。
+- Fable：`claude-fable-5-2`、`claude-fable-5-1`、`claude-fable-5`。
+- Sonnet：`claude-sonnet-5-5`、`claude-sonnet-5`。
+- Haiku：`claude-haiku-5-5`。
+
+不导入 Sonnet 4.6 和 Haiku 4.5。较新四款支持 1M 上下文和 128K 默认输出；保留型号沿用 CLI 默认输出上限 64K，Opus 4.6 原生窗口为 200K。Haiku 5.5 已支持思考档位；Opus 4.6 不提供 `xhigh`。本插件不启用 Fast 模式。
+
+使用资格和额外用量取决于登录 CLI 的账号。Windows 需要原生、可直接运行的 `claude.exe`，不能使用 npm 的 `.cmd` 包装脚本；必要时用 `PI_CLAUDE_CODE_PROVIDER_PATH` 指定路径。
 
 安装后或 CLI 更新后，可运行 `/pi-claude-code-provider-doctor` 检查版本、型号和工具桥，不发起模型推理。`/pi-claude-code-provider-doctor report` 会生成脱敏诊断信息，分享前请先检查。
 
@@ -123,7 +132,15 @@ Reload Pi resources, then select a model under `pi-claude-code-provider`, or sta
 pi --model pi-claude-code-provider/claude-sonnet-5-5
 ```
 
-Available IDs are `claude-sonnet-5-5`, `claude-fable-5-2`, `claude-fable-5-1`, `claude-opus-5-5`, and `claude-haiku-4-5`. Fable 5.2 supports a 1M context window and 128K maximum output; 5.1 remains available for existing sessions. Entitlements and extra usage depend on the account signed into Claude Code. Windows requires a native executable `claude.exe`, not an npm `.cmd` shim; set `PI_CLAUDE_CODE_PROVIDER_PATH` if needed.
+The catalog offers 11 models:
+
+- Opus: `claude-opus-5-5`, `claude-opus-5`, `claude-opus-4-8`, `claude-opus-4-7`, `claude-opus-4-6`.
+- Fable: `claude-fable-5-2`, `claude-fable-5-1`, `claude-fable-5`.
+- Sonnet: `claude-sonnet-5-5`, `claude-sonnet-5`.
+- Haiku: `claude-haiku-5-5`.
+
+Sonnet 4.6 and Haiku 4.5 are intentionally excluded. The four newest models have a 1M context window and 128K default output cap; legacy entries retain the CLI's 64K default cap, with a native 200K window on Opus 4.6. Haiku 5.5 supports effort; Opus 4.6 does not offer `xhigh`. The provider does not enable Fast mode.
+ Entitlements and extra usage depend on the account signed into Claude Code. Windows requires a native executable `claude.exe`, not an npm `.cmd` shim; set `PI_CLAUDE_CODE_PROVIDER_PATH` if needed.
 
 Run `/pi-claude-code-provider-doctor` after installation or a CLI update to check versions, models, and the tool bridge without inference. Its `report` output is sanitized; inspect it before sharing.
 

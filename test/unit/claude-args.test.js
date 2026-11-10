@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { BRIDGE_PATH, baseClaudeArgs, providerArgs, thinkingDisplay, transcriptBreakpointEnabled } from "../../src/claude-args.ts";
 import { NEUTRAL_BUN_CONFIG, needsBunConfig, scriptLaunch } from "../../src/host-runtime.ts";
+import { providerModels } from "../../src/catalog.ts";
 const image = (data) => ({ type: "image", source: { type: "base64", media_type: "image/png", data } });
 
 test("sends images inline after their record and no private path in the prompt", () => {
@@ -55,7 +56,7 @@ test("a new image only extends the prompt, leaving earlier blocks unchanged", ()
 
 test("every advertised model id is passed to Claude verbatim", () => {
     const prepared = { transcriptBlocks: [], systemPromptPath: "/tmp/system.txt" };
-    for (const model of ["claude-sonnet-5-5", "claude-opus-5-5", "claude-haiku-4-5", "claude-fable-5-1"]) {
+    for (const { id: model } of providerModels()) {
         const { args } = providerArgs(prepared, model, "low");
         assert.equal(args[args.indexOf("--model") + 1], model);
     }

@@ -12,7 +12,7 @@ export const SURFACE_CASES = [
 ];
 
 /** Store only startup records and the effort field; inference is refused locally. */
-export async function captureSurfaceCase(executable, { model, effort }, timeoutMs = 60_000) {
+export async function captureSurfaceCase(executable, { model, effort, maxTokens }, timeoutMs = 60_000) {
   const directory = await mkdtemp(join(tmpdir(), "pi-claude-code-provider-surface-"));
   let body;
   let receiveBody;
@@ -45,7 +45,8 @@ export async function captureSurfaceCase(executable, { model, effort }, timeoutM
       server.listen(0, "127.0.0.1", resolve);
     });
     process = spawnCaptureChild(executable, args, {
-      cwd: directory, env: captureEnvironment(home, `http://127.0.0.1:${server.address().port}`),
+      cwd: directory, env: captureEnvironment(home, `http://127.0.0.1:${server.address().port}`,
+        maxTokens === undefined ? {} : { CLAUDE_CODE_MAX_OUTPUT_TOKENS: String(maxTokens) }),
     });
     process.child.stdout.on("data", (chunk) => { stdout += chunk; });
     process.child.stderr.resume();
@@ -70,6 +71,7 @@ export async function captureSurfaceCase(executable, { model, effort }, timeoutM
     const initIndex = records.indexOf(initialization[0]);
     return {
       model, requestedEffort: effort ?? null, observedEffort: body?.output_config?.effort ?? null,
+      observedThinking: body?.thinking?.type ?? null, observedMaxTokens: body?.max_tokens ?? null,
       requestCaptured: Boolean(body), initializationCount: initialization.length,
       initialization: sanitizeSurface(initialization[0] ?? null, directory),
       preInitRecords: sanitizeSurface(initIndex === -1 ? records : records.slice(0, initIndex), directory),
