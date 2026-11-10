@@ -3,7 +3,7 @@ import test from "node:test";
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import { providerModels } from "../../src/catalog.ts";
 
-test("advertises each alias's full model id with Claude Code's own context window and default output cap", () => {
+test("advertises concrete model IDs, including Fable 5.2, with their context and output limits", () => {
     // The same on every subscription tier: Claude Code serves Opus 5.5 with its
     // native 1M window on Pro too, so nothing here depends on the account.
     const models = providerModels();
@@ -11,6 +11,7 @@ test("advertises each alias's full model id with Claude Code's own context windo
         models.map(({ id, name, contextWindow, maxTokens }) => ({ id, name, contextWindow, maxTokens })),
         [
             { id: "claude-sonnet-5-5", name: "Sonnet 5.5", contextWindow: 1_000_000, maxTokens: 128_000 },
+            { id: "claude-fable-5-2", name: "Fable 5.2", contextWindow: 1_000_000, maxTokens: 128_000 },
             { id: "claude-fable-5-1", name: "Fable 5.1", contextWindow: 1_000_000, maxTokens: 64_000 },
             { id: "claude-opus-5-5", name: "Opus 5.5", contextWindow: 1_000_000, maxTokens: 128_000 },
             { id: "claude-haiku-4-5", name: "Haiku 4.5", contextWindow: 200_000, maxTokens: 32_000 },

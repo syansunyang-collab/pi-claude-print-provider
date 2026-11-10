@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Add the explicitly selectable `claude-fable-5-2` (1M context / 128K maximum output), retaining Fable 5.1 for existing sessions. Subscription usage remains unpriced here; API-equivalent estimates belong to the host's pricing integration.
+
 ### Fixed
 
 - Omit only standalone assistant `<thinking_mode>auto</thinking_mode>` text blocks from history replay, preserving tool calls, thinking, images, and stored history. Live output and refusals remain unchanged. Existing affected history changes its request prefix on first use; quote or fence a deliberately requested literal marker to retain it in replay.
