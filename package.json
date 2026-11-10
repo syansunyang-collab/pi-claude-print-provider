@@ -1,6 +1,6 @@
 {
   "name": "pi-claude-print-provider",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "type": "module",
   "description": "Use your own Claude subscription in Pi through the unmodified Claude Code CLI. Pi runs the tools; images stream over stdin and CLI telemetry stays off.",
   "author": "Kai Mercer <syansunyang@gmail.com>",

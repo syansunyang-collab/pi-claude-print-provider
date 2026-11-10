@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-11-10
+
 ### Changed
 
 - History replay no longer sends thinking summaries. They remain in live display and stored history; without signatures they restore no reasoning state, and a summary of steps that never ran could read to the next turn as completed work. Existing history changes its request prefix once on first use; later appends stay stable.
