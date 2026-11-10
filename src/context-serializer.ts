@@ -55,6 +55,14 @@ const ALLOWED_CONTENT_BLOCKS: Record<ContentRole, ReadonlySet<string>> = {
   toolResult: new Set(["text", "image"]),
 };
 
+/**
+ * Assistant text consisting only of paired mode or effort markers, such as a
+ * thinking_mode or reasoning_effort tag pair. The model sometimes emits these
+ * as a text block of their own; replayed as an earlier answer, they invite the
+ * next turn to repeat them. Mixed text, quotes, and other tags do not match.
+ */
+const STANDALONE_CONTROL_MARKERS = /^(?:\s*<(thinking_mode|reasoning_effort|budget:reasoning_effort)>[^<>\r\n]+<\/\1>)+\s*$/;
+
 function safeToolName(name: string, used: Set<string>): string {
   // Claude Code names an MCP tool mcp__<server>__<tool> after replacing every
   // character outside [a-zA-Z0-9_-] with "_". Any other character would make its
@@ -184,8 +192,8 @@ export async function prepareRequestWithLimits(
         switch (block.type) {
           case "text":
             if (typeof block.text !== "string") throw new ClaudeCodeError("content_shape", "Pi text content must contain text");
-            // Omit only this standalone assistant marker from replay, not live output or source history.
-            if (role === "assistant" && block.text.trim() === "<thinking_mode>auto</thinking_mode>") break;
+            // Omit only standalone assistant control markers from replay, not live output or source history.
+            if (role === "assistant" && STANDALONE_CONTROL_MARKERS.test(block.text)) break;
             output.push({ type: "text", text: block.text });
             break;
           case "thinking":
@@ -193,11 +201,9 @@ export async function prepareRequestWithLimits(
             if (block.redacted !== undefined && typeof block.redacted !== "boolean") {
               throw new ClaudeCodeError("content_shape", "Pi thinking redacted must be boolean");
             }
-            output.push({
-              type: "thinking",
-              thinking: block.thinking,
-              ...(block.redacted === true ? { redacted: true } : {}),
-            });
+            // Validated but not replayed. The text is a display summary without its
+            // signature, so it restores no reasoning state; replayed, a summary of
+            // steps never executed reads to the next turn as work already done.
             break;
           case "toolCall": {
             const id = requireNonemptyString(block.id, "tool-call ID");

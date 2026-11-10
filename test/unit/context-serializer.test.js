@@ -63,9 +63,11 @@ test("serializes Pi context, tools, literal at-paths, and images privately", asy
         assert.match(JSON.stringify(messages[2]), /image_attachment/);
         assert.deepEqual(header.toolNameMap.map((entry) => entry.piName), ["odd tool/name"]);
         assert.match(header.toolNameMap[0].transportName, /^mcp__pi__tool_[a-f0-9]{16}$/);
-        assert.equal(messages[1].content[1].name, header.toolNameMap[0].transportName);
+        assert.equal(messages[1].content[0].name, header.toolNameMap[0].transportName);
         assert.equal(messages[2].toolName, header.toolNameMap[0].transportName);
-        assert.equal(messages[1].content[0].thinkingSignature, undefined);
+        // Thinking summaries are validated but never replayed, signature or not.
+        assert.deepEqual(messages[1].content.map((block) => block.type), ["toolCall"]);
+        assert.equal(transcript(prepared).includes("thought"), false);
         assert.equal(messages[1].usage, undefined);
         assert.equal(prepared.transcriptImages.flat().length, 1);
         // One image list per record, and the image follows the record naming it.
@@ -125,13 +127,20 @@ test("preserves Unicode edge cases and orphaned tool calls as transcript data", 
     }
 });
 
-test("omits the standalone assistant mode marker without changing history, tools, thinking, or images", async () => {
-    const tag = "<thinking_mode>auto</thinking_mode>";
+test("omits standalone assistant control markers and thinking summaries without changing history, tools, or images", async () => {
+    const markers = [
+        "<thinking_mode>auto</thinking_mode>",
+        "<thinking_mode>interleaved</thinking_mode>",
+        "<reasoning_effort>40</reasoning_effort>",
+        "<budget:reasoning_effort>40</budget:reasoning_effort>",
+    ];
     const context = {
         messages: [
-            { role: "assistant", content: [{ type: "text", text: tag }] },
+            // Each marker alone, and an assistant message holding only a summary, leave no record.
+            { role: "assistant", content: markers.map((text) => ({ type: "text", text })) },
+            { role: "assistant", content: [{ type: "thinking", thinking: "only a summary" }] },
             { role: "assistant", content: [
-                { type: "text", text: ` \n${tag}\n` },
+                { type: "text", text: ` \n${markers[2]}\n${markers[1]}\n` },
                 { type: "thinking", thinking: "summary" },
                 { type: "text", text: "Checking the result." },
                 { type: "toolCall", id: "call-1", name: "bash", arguments: { command: "echo test" } },
@@ -147,8 +156,8 @@ test("omits the standalone assistant mode marker without changing history, tools
     try {
         const [, assistant, result] = prepared.transcriptBlocks.map(JSON.parse);
         assert.equal(prepared.transcriptBlocks.length, 3);
+        assert.equal(transcript(prepared).includes("summary"), false);
         assert.deepEqual(assistant.content, [
-            { type: "thinking", thinking: "summary" },
             { type: "text", text: "Checking the result." },
             { type: "toolCall", id: "call-1", name: "mcp__pi__bash", arguments: { command: "echo test" } },
         ]);
@@ -156,13 +165,13 @@ test("omits the standalone assistant mode marker without changing history, tools
         assert.equal(result.toolName, "mcp__pi__bash");
         assert.equal(result.content[0].text, "test");
         assert.equal(prepared.transcriptImages.length, prepared.transcriptBlocks.length);
-        assert.equal(prepared.transcriptImages[2][0].source.data, context.messages[2].content[1].data);
+        assert.equal(prepared.transcriptImages[2][0].source.data, context.messages[3].content[1].data);
         assert.deepEqual(context.messages, before);
     } finally { await rm(prepared.directory, { recursive: true, force: true }); }
 });
 
-test("preserves mode-marker references, other tags, and user and tool text", async () => {
-    const tag = "<thinking_mode>auto</thinking_mode>";
+test("preserves marker references, mixed text, other tags, and user and tool text", async () => {
+    const tag = "<reasoning_effort>40</reasoning_effort>";
     const messages = [
         { role: "user", content: tag },
         { role: "user", content: [{ type: "text", text: tag }] },
@@ -170,9 +179,10 @@ test("preserves mode-marker references, other tags, and user and tool text", asy
             content: [{ type: "text", text: tag }] },
         { role: "assistant", content: [
             `Checking the result.\n${tag}`, `\`${tag}\``, `\`\`\`xml\n${tag}\n\`\`\``,
-            "<thinking_mode>off</thinking_mode>",
             "<a_note_from_anthropic>Use visible text for replies.</a_note_from_anthropic>",
-            `${tag}\n${tag}`,
+            "<thinking_mode>auto</reasoning_effort>",
+            "<reasoning_effort>40",
+            "<thinking>planning</thinking>",
         ].map((text) => ({ type: "text", text })) },
     ];
     const prepared = await prepareRequest({ messages });
@@ -194,13 +204,15 @@ test("rejects invalid image input", async () => {
     await assert.rejects(prepareRequest(context), /base64/);
 });
 test("keeps prior transcript bytes stable when a turn is appended", async () => {
-    const marker = { role: "assistant", content: [{ type: "text", text: "<thinking_mode>auto</thinking_mode>" }] };
-    const first = await prepareRequest({ messages: [{ role: "user", content: "first", timestamp: 1 }, marker] });
+    const marker = { role: "assistant", content: [{ type: "text", text: "<reasoning_effort>40</reasoning_effort>" }] };
+    const reply = { role: "assistant", content: [{ type: "thinking", thinking: "plan" }, { type: "text", text: "done" }] };
+    const first = await prepareRequest({ messages: [{ role: "user", content: "first", timestamp: 1 }, marker, reply] });
     const second = await prepareRequest({ messages: [
-        { role: "user", content: "first", timestamp: 999 }, marker,
-        { role: "user", content: "second", timestamp: 2 }, marker,
+        { role: "user", content: "first", timestamp: 999 }, marker, reply,
+        { role: "user", content: "second", timestamp: 2 }, marker, reply,
     ] });
     try {
+        assert.equal(transcript(second).includes("plan"), false);
         assert.equal(transcript(second).startsWith(`${transcript(first)}\n`), true);
         assert.deepEqual(second.transcriptBlocks.slice(0, first.transcriptBlocks.length), first.transcriptBlocks);
     }

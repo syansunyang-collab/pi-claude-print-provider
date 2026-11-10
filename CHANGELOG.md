@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Changed
+
+- History replay no longer sends thinking summaries. They remain in live display and stored history; without signatures they restore no reasoning state, and a summary of steps that never ran could read to the next turn as completed work. Existing history changes its request prefix once on first use; later appends stay stable.
+
+### Fixed
+
+- History replay also omits standalone assistant text blocks consisting only of paired `thinking_mode` (any value, including `interleaved`), `reasoning_effort`, or `budget:reasoning_effort` markers with matching names. Mixed text, quotes, other tags, unclosed or mismatched markers, and user and tool-result content remain.
+
 ## [1.1.0] - 2026-11-10
 
 ### Changed

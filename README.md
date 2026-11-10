@@ -84,7 +84,7 @@ pi --model pi-claude-code-provider/claude-sonnet-5-5
 | `PI_CLAUDE_CODE_PROVIDER_THINKING_DISPLAY` | `summarized`（默认）、`omitted` 或 `off` |
 | `PI_CLAUDE_CODE_PROVIDER_METRICS_LOG` | 可选的本地 JSONL 请求指标文件 |
 
-历史重放仅过滤助手独立文本块中的 `<thinking_mode>auto</thinking_mode>`（允许首尾空白），避免把模式标签继续当成旧回答发送。原始会话、实时显示、工具和思考块保留，混合正文及其他标签不删；有意要求裸输出同一标签也会命中，可用引号或代码块保留。首次处理已有标签的历史会改变受影响的缓存前缀，后续追加保持稳定，不手动清空缓存。
+历史重放会跳过助手的独立控制标签块：整块（允许首尾空白）只由一组或多组开闭同名的 `thinking_mode`、`reasoning_effort`、`budget:reasoning_effort` 标签构成时不再发送，避免把控制标签当成旧回答。思考摘要只用于实时显示和原始会话，不再重放进后续请求：它不带签名，恢复不了推理状态，描述了却没执行的步骤还会被下一轮当成已完成。原始会话、实时显示、工具调用和结果保留，混合正文、其他标签、未闭合或开闭不同名的标签不删；有意要求裸输出同类标签也会命中，可用引号或代码块保留。首次处理已有标签的历史会改变受影响的缓存前缀，后续追加保持稳定，不手动清空缓存。
 
 插件不支持用 API key、`CLAUDE_CODE_OAUTH_TOKEN`、Bedrock、Vertex 或 Foundry 替代官方 CLI 的订阅登录。它不是 Anthropic 官方产品，也不经手他人凭据或转售额度。
 
@@ -176,7 +176,7 @@ With the Claude API estimation extension, Pi displays API-equivalent costs using
 | `PI_CLAUDE_CODE_PROVIDER_THINKING_DISPLAY` | `summarized` (default), `omitted`, or `off` |
 | `PI_CLAUDE_CODE_PROVIDER_METRICS_LOG` | Optional local JSONL request metrics |
 
-History replay omits only assistant text blocks equal to `<thinking_mode>auto</thinking_mode>` after trimming outer whitespace. Stored history, live display, tools, thinking, mixed text, and other tags remain unchanged. An intentionally requested bare marker is also omitted; quote or fence it to retain it. Filtering existing history changes the affected cached prefix on first use; later appends stay stable without manually clearing caches.
+History replay omits assistant text blocks that, apart from whitespace, consist only of paired `thinking_mode`, `reasoning_effort`, or `budget:reasoning_effort` markers with matching names. Thinking summaries are shown live and stored but not replayed: without signatures they restore no reasoning state, and a summary of steps that never ran would read to the next turn as completed work. Stored history, live display, tool calls and results, mixed text, other tags, and unclosed or mismatched markers remain unchanged. An intentionally requested bare marker is also omitted; quote or fence it to retain it. Filtering existing history changes the affected cached prefix on first use; later appends stay stable without manually clearing caches.
 
 API keys, `CLAUDE_CODE_OAUTH_TOKEN`, Bedrock, Vertex, and Foundry are not supported as replacements for official CLI subscription sign-in. This is not an Anthropic product and does not handle other people's credentials or resell usage.
 
