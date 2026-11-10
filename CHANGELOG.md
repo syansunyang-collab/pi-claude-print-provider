@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-11-10
+
+### Changed
+
+- The maintained model picker now excludes Sonnet 4.6 and Haiku 4.5. If an existing session selected Haiku 4.5, reselect Haiku 5.5 (or another listed model) after updating. Explicit model IDs remain stable; updating does not silently migrate a saved selection.
+
 ### Added
 
 - Expand the maintained picker to 11 concrete models: Opus 5.5/5/4.8/4.7/4.6, Fable 5.2/5.1/5, Sonnet 5.5/5, and Haiku 5.5. Sonnet 4.6 and Haiku 4.5 are intentionally excluded. Haiku 5.5 exposes effort; Opus 4.6 omits unsupported `xhigh`. Native context windows and default output caps follow the CLI catalog; explicit model IDs and limits were checked on the wire with CLI 2.1.292. Fast mode is not enabled. Subscription usage remains unpriced here; API-equivalent estimates belong to the host's pricing integration.

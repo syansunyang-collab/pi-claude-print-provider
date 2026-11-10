@@ -30,7 +30,7 @@ pi remove npm:pi-claude-code-provider
 然后安装固定版本：
 
 ```bash
-pi install git:github.com/syansunyang-collab/pi-claude-print-provider@v1.0.1
+pi install git:github.com/syansunyang-collab/pi-claude-print-provider@v1.1.0
 ```
 
 重载 Pi 资源后，在 `/model` 选择 `pi-claude-code-provider` 下的型号；也可直接启动：
@@ -123,7 +123,7 @@ pi remove npm:pi-claude-code-provider
 Then install the pinned release:
 
 ```bash
-pi install git:github.com/syansunyang-collab/pi-claude-print-provider@v1.0.1
+pi install git:github.com/syansunyang-collab/pi-claude-print-provider@v1.1.0
 ```
 
 Reload Pi resources, then select a model under `pi-claude-code-provider`, or start Pi directly:
